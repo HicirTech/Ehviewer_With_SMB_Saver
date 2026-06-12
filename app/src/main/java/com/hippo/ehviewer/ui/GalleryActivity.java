@@ -75,6 +75,7 @@ import com.hippo.ehviewer.gallery.ArchiveGalleryProvider;
 import com.hippo.ehviewer.gallery.DirGalleryProvider;
 import com.hippo.ehviewer.gallery.EhGalleryProvider;
 import com.hippo.ehviewer.gallery.GalleryProvider2;
+import com.hippo.ehviewer.smb.SmbAutoDownloadManager;
 import com.hippo.ehviewer.widget.GalleryGuideView;
 import com.hippo.ehviewer.widget.GalleryHeader;
 import com.hippo.ehviewer.widget.ReversibleSeekBar;
@@ -178,6 +179,7 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
 
     private boolean canFinish = false;
     private boolean autoTransferring = false;
+    private boolean mSmbAutoTriggered = false;
 
     private final ConcurrentPool<NotifyTask> mNotifyTaskPool = new ConcurrentPool<>(3);
 
@@ -780,6 +782,15 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     public void onUpdateCurrentIndex(int index) {
         if (null != mGalleryProvider) {
             mGalleryProvider.putStartPage(index);
+        }
+
+        if (!mSmbAutoTriggered
+                && index == 0
+                && ACTION_EH.equals(mAction)
+                && mGalleryInfo != null
+                && Settings.getSmbSaveEnabled()) {
+            mSmbAutoTriggered = true;
+            SmbAutoDownloadManager.getInstance().enqueueFromFirstPage(this, mGalleryInfo);
         }
 
         NotifyTask task = mNotifyTaskPool.pop();
