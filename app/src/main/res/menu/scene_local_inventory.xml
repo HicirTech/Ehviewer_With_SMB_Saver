@@ -9,4 +9,10 @@
         android:title="@string/refresh"
         app:showAsAction="always"/>
 
+    <item
+        android:id="@+id/action_smb_tasks"
+        android:icon="@drawable/v_cloud_download_dark_x24"
+        android:title="@string/smb_download_tasks"
+        app:showAsAction="always"/>
+
 </menu>

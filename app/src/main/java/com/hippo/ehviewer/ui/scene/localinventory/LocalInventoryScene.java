@@ -182,6 +182,10 @@ public class LocalInventoryScene extends ToolbarScene
             reload();
             return true;
         }
+        if (id == R.id.action_smb_tasks) {
+            startScene(new Announcer(SmbDownloadTasksScene.class));
+            return true;
+        }
         return false;
     }
 

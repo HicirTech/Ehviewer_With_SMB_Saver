@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <FrameLayout
+        android:id="@+id/content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingLeft="@dimen/gallery_list_margin_h"
+            android:paddingRight="@dimen/gallery_list_margin_h"
+            android:paddingTop="@dimen/gallery_list_margin_v"
+            android:paddingBottom="@dimen/gallery_list_margin_v"
+            android:scrollbars="vertical" />
+
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/tip"
+        android:layout_width="228dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center_horizontal"
+        android:drawablePadding="8dp"
+        android:text="@string/smb_download_tasks_empty"
+        style="@style/TextAppearance.AppCompat.Medium" />
+
+</FrameLayout>

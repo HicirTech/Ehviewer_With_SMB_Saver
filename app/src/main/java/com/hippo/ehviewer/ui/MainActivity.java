@@ -82,6 +82,7 @@ import com.hippo.ehviewer.ui.scene.download.DownloadLabelsScene;
 import com.hippo.ehviewer.ui.scene.download.DownloadsScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.FavoritesScene;
 import com.hippo.ehviewer.ui.scene.localinventory.LocalInventoryScene;
+import com.hippo.ehviewer.ui.scene.localinventory.SmbDownloadTasksScene;
 import com.hippo.ehviewer.ui.scene.GalleryCommentsScene;
 import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryDetailScene;
 import com.hippo.ehviewer.ui.scene.GalleryInfoScene;
@@ -194,6 +195,7 @@ public final class MainActivity extends StageActivity
         registerLaunchMode(DownloadLabelsScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
         registerLaunchMode(FavoritesScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
         registerLaunchMode(LocalInventoryScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
+        registerLaunchMode(SmbDownloadTasksScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TOP);
         registerLaunchMode(HistoryScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TOP);
         registerLaunchMode(ProgressScene.class, SceneFragment.LAUNCH_MODE_STANDARD);
     }
