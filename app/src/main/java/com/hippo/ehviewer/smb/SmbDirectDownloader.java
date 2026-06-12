@@ -61,8 +61,14 @@ public final class SmbDirectDownloader {
     private final CopyOnWriteArrayList<TaskObserver> observers = new CopyOnWriteArrayList<>();
     @Nullable
     private SmbDownloadService service;
+    /**
+     * Written by {@link #start} / {@link #attachService} from any thread, read by main-thread
+     * {@code pumpOnMainThread} / {@code updateNotification}. {@code volatile} keeps the writes
+     * visible without a full lock; the field is otherwise idempotent (only flipped from null to
+     * a process-lived application context).
+     */
     @Nullable
-    private Context appContext;
+    private volatile Context appContext;
 
     public static SmbDirectDownloader getInstance() {
         return INSTANCE;
