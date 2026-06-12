@@ -331,7 +331,10 @@ class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
             mHelper!!.firstRefresh()
         }
 
-        guideCollections()
+        if (mUrlBuilder != null) {
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.RIGHT)
+            guideCollections()
+        }
 
         return view
     }
@@ -454,7 +457,7 @@ class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
     override fun onCreateDrawerView(
         inflater: LayoutInflater,
         container: ViewGroup?, savedInstanceState: Bundle?
-    ): View {
+    ): View? {
         val view = inflater.inflate(R.layout.drawer_list_rv, container, false)
         val context = getEHContext()
         val toolbar = ViewUtils.`$$`(view, R.id.toolbar) as Toolbar
@@ -1103,11 +1106,10 @@ class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
 
     private fun onGetFavoritesLocal(keyword: String?, taskId: Int) {
         if (mHelper != null && mHelper!!.isCurrentTask(taskId)) {
-            val list: MutableList<GalleryInfo?>?
-            if (TextUtils.isEmpty(keyword)) {
-                list = EhDB.getAllLocalFavorites()
+            val list: MutableList<GalleryInfo?> = if (TextUtils.isEmpty(keyword)) {
+                EhDB.getAllLocalFavorites() ?: ArrayList()
             } else {
-                list = EhDB.searchLocalFavorites(keyword)
+                EhDB.searchLocalFavorites(keyword) ?: ArrayList()
             }
 
             if (list.size == 0) {
@@ -1325,6 +1327,11 @@ class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
         override fun getPageData(taskId: Int, type: Int, page: Int, append: String?) {
             val activity = getActivity2()
             if (null == activity || null == mUrlBuilder || null == mClient) {
+                return
+            }
+            if (mUrlBuilder!!.getFavCat() == FavListUrlBuilder.FAV_CAT_LOCAL) {
+                val keyword = mUrlBuilder!!.getKeyword()
+                SimpleHandler.getInstance().post { onGetFavoritesLocal(keyword, taskId) }
                 return
             }
             mUrlBuilder!!.setIndex(page)
@@ -1739,3 +1746,4 @@ class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
         private const val TAG = "FavoritesScene"
     }
 }
+
