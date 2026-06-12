@@ -512,6 +512,8 @@
     <string name="smb_notif_extra_move">  (+%d move)</string>
     <string name="smb_notif_progress_starting">Starting…%s</string>
     <string name="smb_notif_progress_count">%1$d/%2$d%3$s</string>
+    <string name="smb_test_error_unconfigured">Host and share name must be configured</string>
+    <string name="smb_test_error_share_not_accessible">Share not accessible</string>
     <string name="smb_save_started">SMB save started: %s</string>
     <string name="smb_save_already_complete">Already saved to SMB, skipping</string>
     <string name="smb_save_not_configured">SMB is not configured</string>

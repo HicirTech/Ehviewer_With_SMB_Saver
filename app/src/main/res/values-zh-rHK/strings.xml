@@ -1054,6 +1054,8 @@
     <string name="smb_notif_extra_move">  （另 %d 個移動）</string>
     <string name="smb_notif_progress_starting">啟動中…%s</string>
     <string name="smb_notif_progress_count">%1$d/%2$d%3$s</string>
+    <string name="smb_test_error_unconfigured">請先填寫主機和共享名稱</string>
+    <string name="smb_test_error_share_not_accessible">無法存取共享</string>
     <string name="smb_save_started">已開始儲存到 SMB：%s</string>
     <string name="smb_save_already_complete">已儲存到 SMB，略過</string>
     <string name="smb_save_not_configured">未設定 SMB</string>

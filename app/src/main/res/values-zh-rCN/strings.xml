@@ -1000,6 +1000,8 @@
     <string name="smb_notif_extra_move">  （另 %d 个移动）</string>
     <string name="smb_notif_progress_starting">启动中…%s</string>
     <string name="smb_notif_progress_count">%1$d/%2$d%3$s</string>
+    <string name="smb_test_error_unconfigured">请先填写主机和共享名</string>
+    <string name="smb_test_error_share_not_accessible">无法访问共享</string>
     <string name="smb_save_started">已开始保存到 SMB：%s</string>
     <string name="smb_save_already_complete">已保存到 SMB，跳过</string>
     <string name="smb_save_not_configured">尚未配置 SMB</string>

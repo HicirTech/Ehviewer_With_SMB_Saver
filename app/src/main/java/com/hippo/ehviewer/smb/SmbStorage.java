@@ -11,6 +11,7 @@ import androidx.annotation.Nullable;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.hippo.ehviewer.EhApplication;
+import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.client.EhEngine;
 import com.hippo.ehviewer.client.EhUrl;
@@ -544,13 +545,16 @@ public final class SmbStorage {
         String shareName = Settings.getSmbShareName();
 
         if (TextUtils.isEmpty(host) || TextUtils.isEmpty(shareName)) {
-            throw new IOException("Host and share name must be configured");
+            // User-facing — surfaced through the Settings toast.
+            throw new IOException(EhApplication.getInstance()
+                    .getString(R.string.smb_test_error_unconfigured));
         }
 
         CIFSContext cifs = buildContext();
         SmbFile shareRoot = new SmbFile(buildSmbUrl(), cifs);
         if (!shareRoot.exists()) {
-            throw new IOException("Share not accessible");
+            throw new IOException(EhApplication.getInstance()
+                    .getString(R.string.smb_test_error_share_not_accessible));
         }
     }
 
