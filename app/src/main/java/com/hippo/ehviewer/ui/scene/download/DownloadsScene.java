@@ -82,6 +82,7 @@ import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
+import com.hippo.ehviewer.smb.SmbStorage;
 import com.hippo.ehviewer.callBack.DownloadSearchCallback;
 import com.hippo.ehviewer.client.EhConfig;
 import com.hippo.ehviewer.client.EhUtils;
@@ -1142,14 +1143,18 @@ public class DownloadsScene extends ToolbarScene
                         break;
                     }
                     List<DownloadLabel> labelRawList = EhApplication.getDownloadManager(context).getLabelList();
-                    List<String> labelList = new ArrayList<>(labelRawList.size() + 1);
+                    boolean smbAvailable = Settings.getSmbSaveEnabled() && SmbStorage.isConfigured();
+                    List<String> labelList = new ArrayList<>(labelRawList.size() + 2);
+                    if (smbAvailable) {
+                        labelList.add(getString(R.string.download_move_to_smb));
+                    }
                     labelList.add(getString(R.string.default_download_label_name));
                     for (int i = 0, n = labelRawList.size(); i < n; i++) {
                         labelList.add(labelRawList.get(i).getLabel());
                     }
                     String[] labels = labelList.toArray(new String[labelList.size()]);
 
-                    MoveDialogHelper helper = new MoveDialogHelper(labels, downloadInfoList);
+                    MoveDialogHelper helper = new MoveDialogHelper(labels, downloadInfoList, smbAvailable);
 
                     new AlertDialog.Builder(context)
                             .setTitle(R.string.download_move_dialog_title)
@@ -1900,10 +1905,13 @@ public class DownloadsScene extends ToolbarScene
 
         private final String[] mLabels;
         private final List<DownloadInfo> mDownloadInfoList;
+        private final boolean mSmbAtZero;
 
-        public MoveDialogHelper(String[] labels, List<DownloadInfo> downloadInfoList) {
+        public MoveDialogHelper(String[] labels, List<DownloadInfo> downloadInfoList,
+                                boolean smbAtZero) {
             mLabels = labels;
             mDownloadInfoList = downloadInfoList;
+            mSmbAtZero = smbAtZero;
         }
 
         @Override
@@ -1917,14 +1925,85 @@ public class DownloadsScene extends ToolbarScene
                 mRecyclerView.outOfCustomChoiceMode();
             }
 
+            if (mSmbAtZero && which == 0) {
+                moveSelectionToSmb(context, mDownloadInfoList);
+                return;
+            }
+
+            int adjusted = mSmbAtZero ? which - 1 : which;
             String label;
-            if (which == 0) {
+            if (adjusted == 0) {
                 label = null;
             } else {
                 label = mLabels[which];
             }
             EhApplication.getDownloadManager(context).changeLabel(mDownloadInfoList, label);
         }
+    }
+
+    /**
+     * Copies the selected local downloads onto the SMB share, then deletes the originals so the
+     * end state matches a real "move". The dao record + the on-disk gallery folder are both
+     * removed for each successfully synced item. Failures are kept locally so the user doesn't
+     * silently lose data.
+     */
+    private void moveSelectionToSmb(@NonNull Context context,
+                                    @NonNull List<DownloadInfo> downloads) {
+        final Context appContext = context.getApplicationContext();
+        Toast.makeText(appContext, R.string.download_moving_to_smb, Toast.LENGTH_SHORT).show();
+        final com.hippo.ehviewer.smb.SmbDirectDownloader.MoveBatchHandle batch =
+                com.hippo.ehviewer.smb.SmbDirectDownloader.getInstance()
+                        .beginMoveBatch(appContext, downloads.size());
+        IoThreadPoolExecutor.Companion.getInstance().execute(() -> {
+            int ok = 0;
+            LongList succeeded = new LongList();
+            List<UniFile> filesToDelete = new ArrayList<>();
+            try {
+                for (DownloadInfo info : downloads) {
+                    batch.onItemStart(info.title);
+                    try {
+                        SmbStorage.syncDownloadedGallery(appContext, info);
+                        succeeded.add(info.gid);
+                        UniFile dir = getGalleryDownloadDir(info);
+                        if (dir != null) {
+                            filesToDelete.add(dir);
+                        }
+                        ok++;
+                    } catch (Throwable e) {
+                        Log.w(TAG, "Move to SMB failed gid=" + info.gid, e);
+                    } finally {
+                        batch.onItemDone();
+                    }
+                }
+            } finally {
+                batch.finish();
+            }
+            final int finalOk = ok;
+            final int total = downloads.size();
+            final UniFile[] fileArr = filesToDelete.toArray(new UniFile[0]);
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                try {
+                    if (!succeeded.isEmpty()) {
+                        DownloadManager dm = EhApplication.getDownloadManager(appContext);
+                        for (int i = 0, n = succeeded.size(); i < n; i++) {
+                            EhDB.removeDownloadDirname(succeeded.get(i));
+                        }
+                        dm.deleteRangeDownload(succeeded);
+                        if (fileArr.length > 0) {
+                            deleteFileAsync(fileArr);
+                        }
+                    }
+                } catch (Throwable e) {
+                    Log.e(TAG, "Move to SMB cleanup failed", e);
+                }
+                try {
+                    Toast.makeText(appContext,
+                            appContext.getString(R.string.download_moved_to_smb, finalOk, total),
+                            Toast.LENGTH_SHORT).show();
+                } catch (Throwable ignored) {
+                }
+            });
+        });
     }
 
 //    /**
