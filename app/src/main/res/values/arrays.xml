@@ -22,6 +22,13 @@
         <item>@string/sort_by_pub_time</item>
     </string-array>
 
+    <string-array name="local_inventory_sort">
+        <item>@string/local_inventory_sort_download_date</item>
+        <item>@string/local_inventory_sort_posted_date</item>
+        <item>@string/local_inventory_sort_title_az</item>
+        <item>@string/local_inventory_sort_category</item>
+    </string-array>
+
     <string-array name="top_list_type">
         <item>@string/gallery_toplists</item>
         <item>@string/uploader_toplists</item>

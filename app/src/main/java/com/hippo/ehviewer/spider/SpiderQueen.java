@@ -740,14 +740,17 @@ public final class SpiderQueen implements Runnable {
             return spiderInfo;
         }
 
-        // Read from download dir
-        UniFile downloadDir = mSpiderDen.getDownloadDir();
-        if (downloadDir != null) {
-            UniFile file = downloadDir.findFile(SPIDER_INFO_FILENAME);
-            spiderInfo = SpiderInfo.read(file);
-            if (spiderInfo != null && spiderInfo.gid == mGalleryInfo.gid &&
-                    spiderInfo.token.equals(mGalleryInfo.token)) {
-                return spiderInfo;
+        // Read from gallery storage (SMB or local download dir)
+        InputStream infoIs = mSpiderDen.openSpiderInfoInputStream(SPIDER_INFO_FILENAME);
+        if (infoIs != null) {
+            try {
+                spiderInfo = SpiderInfo.read(infoIs);
+                if (spiderInfo != null && spiderInfo.gid == mGalleryInfo.gid &&
+                        spiderInfo.token.equals(mGalleryInfo.token)) {
+                    return spiderInfo;
+                }
+            } finally {
+                IOUtils.closeQuietly(infoIs);
             }
         }
 
@@ -862,15 +865,16 @@ public final class SpiderQueen implements Runnable {
     }
 
     private synchronized void writeSpiderInfoToLocal(@NonNull SpiderInfo spiderInfo) {
-        // Write to download dir
-        UniFile downloadDir = mSpiderDen.getDownloadDir();
-        if (downloadDir != null) {
-            UniFile file = downloadDir.createFile(SPIDER_INFO_FILENAME);
+        // Write to gallery storage (SMB or local download dir)
+        OutputStream infoOs = mSpiderDen.openSpiderInfoOutputStream(SPIDER_INFO_FILENAME);
+        if (infoOs != null) {
             try {
-                spiderInfo.write(file.openOutputStream());
+                spiderInfo.write(infoOs);
             } catch (Throwable e) {
                 ExceptionUtils.throwIfFatal(e);
                 // Ignore
+            } finally {
+                IOUtils.closeQuietly(infoOs);
             }
         }
 

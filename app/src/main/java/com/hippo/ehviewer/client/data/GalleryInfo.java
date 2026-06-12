@@ -28,6 +28,7 @@ import com.hippo.ehviewer.dao.DownloadInfo;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.regex.Pattern;
 
 public class GalleryInfo implements Parcelable {
@@ -347,7 +348,17 @@ public class GalleryInfo implements Parcelable {
         jsonObject.put("spanGroupIndex", spanGroupIndex);
         jsonObject.put("favoriteSlot", favoriteSlot);
         jsonObject.put("favoriteName", favoriteName);
-        jsonObject.put("tgList", new JSONArray(Collections.singletonList(tgList)));
+        if (tgList != null) {
+            JSONArray tgArray = new JSONArray(tgList.size());
+            for (String tag : tgList) {
+                if (tag != null) {
+                    tgArray.add(tag);
+                }
+            }
+            if (!tgArray.isEmpty()) {
+                jsonObject.put("tgList", tgArray);
+            }
+        }
         jsonObject.put("pages", pages);
         return jsonObject;
     }
@@ -360,13 +371,22 @@ public class GalleryInfo implements Parcelable {
         galleryInfo.favoriteSlot = object.getIntValue("favoriteSlot");
         galleryInfo.gid = object.getLongValue("gid");
         galleryInfo.pages = object.getIntValue("pages");
-        galleryInfo.rated = object.getBoolean("rated");
-        galleryInfo.rating = object.getFloat("rating");
-        galleryInfo.simpleLanguage = object.getString("");
+        Boolean ratedValue = object.getBoolean("rated");
+        galleryInfo.rated = ratedValue != null && ratedValue;
+        Float ratingValue = object.getFloat("rating");
+        galleryInfo.rating = ratingValue != null ? ratingValue : 0f;
+        galleryInfo.simpleLanguage = object.getString("simpleLanguage");
         JSONArray simpleTagsArr = object.getJSONArray("simpleTags");
         if (simpleTagsArr != null) {
             try {
-                galleryInfo.simpleTags = simpleTagsArr.toJavaList(String.class).toArray(new String[0]);
+                List<String> simpleTagsList = simpleTagsArr.toJavaList(String.class);
+                ArrayList<String> filtered = new ArrayList<>(simpleTagsList.size());
+                for (String s : simpleTagsList) {
+                    if (s != null) {
+                        filtered.add(s);
+                    }
+                }
+                galleryInfo.simpleTags = filtered.toArray(new String[0]);
             } catch (ClassCastException ignore) {
             }
         }
@@ -376,7 +396,14 @@ public class GalleryInfo implements Parcelable {
         JSONArray tgArray = object.getJSONArray("tgList");
         if (tgArray != null) {
             try {
-                galleryInfo.tgList = (ArrayList<String>) tgArray.toJavaList(String.class);
+                List<String> tgListRaw = tgArray.toJavaList(String.class);
+                ArrayList<String> filtered = new ArrayList<>(tgListRaw.size());
+                for (String s : tgListRaw) {
+                    if (s != null) {
+                        filtered.add(s);
+                    }
+                }
+                galleryInfo.tgList = filtered;
             } catch (ClassCastException ignore) {
             }
         }

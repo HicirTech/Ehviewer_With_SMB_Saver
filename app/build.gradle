@@ -171,6 +171,7 @@ dependencies {
     // 1.18.x 在部分 Android 运行环境上出现 NoClassDefFoundError(org.jsoup.parser.Tag)
     // 回退到 Android 侧更稳定的版本，避免运行时缺类
     implementation 'org.jsoup:jsoup:1.15.4'
+    implementation 'eu.agno3.jcifs:jcifs-ng:2.1.10'
 
     // Glide 图片加载库
 //    implementation 'com.github.bumptech.glide:glide:5.0.5'

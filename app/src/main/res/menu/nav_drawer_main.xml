@@ -53,6 +53,11 @@
             android:title="@string/downloads"
             android:icon="@drawable/v_download_black_x24"/>
 
+        <item
+            android:id="@+id/nav_local_inventory"
+            android:title="@string/local_inventory"
+            android:icon="@drawable/v_folder_share_black_x24"/>
+
 <!--        <item-->
 <!--            android:id="@+id/nav_eh_news"-->
 <!--            android:title="@string/news"-->

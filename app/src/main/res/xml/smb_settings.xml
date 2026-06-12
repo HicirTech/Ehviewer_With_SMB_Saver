@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <com.hippo.preference.SwitchPreference
+        android:defaultValue="false"
+        android:key="smb_save_enabled"
+        android:title="@string/settings_smb_enable_save"
+        android:summary="@string/settings_smb_enable_save_summary" />
+
+    <com.hippo.preference.SwitchPreference
+        android:defaultValue="false"
+        android:key="smb_auto_download_enabled"
+        android:title="@string/settings_smb_enable_auto_download"
+        android:summary="@string/settings_smb_enable_auto_download_summary" />
+
+    <PreferenceCategory android:title="@string/settings_smb_category_share" />
+
+    <androidx.preference.EditTextPreference
+        android:key="smb_host"
+        android:title="@string/settings_smb_host"
+        android:summary="@string/settings_smb_host_summary"
+        app:useSimpleSummaryProvider="false"
+        app:iconSpaceReserved="false" />
+
+    <androidx.preference.EditTextPreference
+        android:key="smb_port"
+        android:title="@string/settings_smb_port"
+        android:summary="@string/settings_smb_port_summary"
+        android:defaultValue="445"
+        android:inputType="number"
+        app:useSimpleSummaryProvider="false"
+        app:iconSpaceReserved="false" />
+
+    <androidx.preference.EditTextPreference
+        android:key="smb_share_name"
+        android:title="@string/settings_smb_share_name"
+        android:summary="@string/settings_smb_share_name_summary"
+        app:useSimpleSummaryProvider="false"
+        app:iconSpaceReserved="false" />
+
+    <androidx.preference.EditTextPreference
+        android:key="smb_share_path"
+        android:title="@string/settings_smb_share_path"
+        android:summary="@string/settings_smb_share_path_summary"
+        app:useSimpleSummaryProvider="false"
+        app:iconSpaceReserved="false" />
+
+    <PreferenceCategory android:title="@string/settings_smb_category_credentials" />
+
+    <androidx.preference.EditTextPreference
+        android:key="smb_username"
+        android:title="@string/settings_smb_username"
+        android:summary="@string/settings_smb_username_summary"
+        app:useSimpleSummaryProvider="false"
+        app:iconSpaceReserved="false" />
+
+    <androidx.preference.EditTextPreference
+        android:key="smb_password"
+        android:title="@string/settings_smb_password"
+        android:summary="@string/settings_smb_password_summary"
+        app:useSimpleSummaryProvider="false"
+        app:iconSpaceReserved="false" />
+
+    <androidx.preference.Preference
+        android:key="smb_test_connection"
+        android:title="@string/settings_smb_test"
+        app:iconSpaceReserved="false" />
+</PreferenceScreen>
