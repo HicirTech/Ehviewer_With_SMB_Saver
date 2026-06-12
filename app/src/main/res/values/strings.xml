@@ -700,7 +700,7 @@
     <string name="settings_read_screen_lightness">Screen lightness</string>
 
     <string name="settings_download">Download</string>
-    <string name="settings_smb">SMB Setting</string>
+    <string name="settings_smb">SMB Settings</string>
     <string name="settings_smb_enable_save">Save Galleries To SMB</string>
     <string name="settings_smb_enable_save_summary">Master switch for SMB save. When off, all SMB features are disabled.</string>
     <string name="settings_smb_enable_auto_download">Auto Download To SMB</string>
