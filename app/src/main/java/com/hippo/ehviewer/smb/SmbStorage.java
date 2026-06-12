@@ -583,15 +583,19 @@ public final class SmbStorage {
     public static void finalizeDownloadedGallery(@NonNull Context context, @NonNull GalleryInfo info) {
         try {
             SmbFile galleryDir = getGalleryDir(info);
-            // If we don't yet know the real page count (e.g. info came from a search list),
-            // pull it from the spider info file written during the actual SMB download.
-            if (info.pages <= 0) {
+            // Resolve the real page count if the caller didn't already have it (e.g. info came
+            // from a search list). We deliberately do NOT mutate `info.pages` here — the same
+            // GalleryInfo instance is held by SmbDirectDownloader.active and can be observed
+            // concurrently from the main thread (task snapshots, notifications). Passing the
+            // resolved value down keeps the write thread-local.
+            int resolvedPages = info.pages;
+            if (resolvedPages <= 0) {
                 int spiderPages = readPagesFromSpiderInfo(info);
                 if (spiderPages > 0) {
-                    info.pages = spiderPages;
+                    resolvedPages = spiderPages;
                 }
             }
-            writeMetadataWithDetail(context, galleryDir, info);
+            writeMetadataWithDetail(context, galleryDir, info, resolvedPages);
             downloadAndWriteCover(context, galleryDir, info);
         } catch (Throwable e) {
             Log.e(TAG, "Failed to finalize SMB gallery gid=" + info.gid, e);
@@ -656,12 +660,17 @@ public final class SmbStorage {
     }
 
     private static void writeMetadataWithDetail(@NonNull Context context, @NonNull SmbFile galleryDir, @NonNull GalleryInfo info) throws IOException {
-        GalleryInfo enriched = enrichWithGalleryTags(context, info);
+        writeMetadataWithDetail(context, galleryDir, info, info.pages);
+    }
+
+    private static void writeMetadataWithDetail(@NonNull Context context, @NonNull SmbFile galleryDir,
+                                                @NonNull GalleryInfo info, int fallbackPages) throws IOException {
+        GalleryInfo enriched = enrichWithGalleryTags(context, info, fallbackPages);
         writeMetadata(galleryDir, enriched);
     }
 
     @NonNull
-    private static GalleryInfo enrichWithGalleryTags(@NonNull Context context, @NonNull GalleryInfo info) {
+    private static GalleryInfo enrichWithGalleryTags(@NonNull Context context, @NonNull GalleryInfo info, int fallbackPages) {
         try {
             String detailUrl = EhUrl.getGalleryDetailUrl(info.gid, info.token);
             GalleryDetail detail = EhEngine.getGalleryDetail(null, EhApplication.getOkHttpClient(context), detailUrl);
@@ -676,7 +685,7 @@ public final class SmbStorage {
             if (detail.category == 0) detail.category = info.category;
             if (TextUtils.isEmpty(detail.posted)) detail.posted = info.posted;
             if (TextUtils.isEmpty(detail.uploader)) detail.uploader = info.uploader;
-            if (detail.pages <= 0) detail.pages = info.pages;
+            if (detail.pages <= 0) detail.pages = fallbackPages > 0 ? fallbackPages : info.pages;
             if (TextUtils.isEmpty(detail.simpleLanguage)) detail.simpleLanguage = info.simpleLanguage;
 
             if (detail.tags != null) {
