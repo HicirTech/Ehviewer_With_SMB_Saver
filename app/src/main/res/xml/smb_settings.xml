@@ -14,7 +14,7 @@
         android:title="@string/settings_smb_enable_auto_download"
         android:summary="@string/settings_smb_enable_auto_download_summary" />
 
-    <PreferenceCategory android:title="Share Configuration" />
+    <PreferenceCategory android:title="@string/settings_smb_category_share" />
 
     <androidx.preference.EditTextPreference
         android:key="smb_host"
@@ -46,7 +46,7 @@
         app:useSimpleSummaryProvider="false"
         app:iconSpaceReserved="false" />
 
-    <PreferenceCategory android:title="Credentials" />
+    <PreferenceCategory android:title="@string/settings_smb_category_credentials" />
 
     <androidx.preference.EditTextPreference
         android:key="smb_username"

@@ -1018,6 +1018,8 @@
     <string name="download_moving_to_smb">正在複製到 SMB 共享…</string>
 
     <string name="settings_smb">SMB 設定</string>
+    <string name="settings_smb_category_share">共享設定</string>
+    <string name="settings_smb_category_credentials">登入資訊</string>
     <string name="settings_smb_enable_save">儲存畫廊至 SMB</string>
     <string name="settings_smb_enable_save_summary">SMB 儲存總開關。關閉時，所有 SMB 相關功能均不可用。</string>
     <string name="settings_smb_enable_auto_download">自動下載至 SMB</string>

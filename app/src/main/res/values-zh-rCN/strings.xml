@@ -1013,6 +1013,8 @@
     <string name="download_moving_to_smb">正在复制到 SMB 共享…</string>
 
     <string name="settings_smb">SMB 设置</string>
+    <string name="settings_smb_category_share">共享配置</string>
+    <string name="settings_smb_category_credentials">凭据</string>
     <string name="settings_smb_enable_save">保存画廊到 SMB</string>
     <string name="settings_smb_enable_save_summary">SMB 保存总开关。关闭时，所有 SMB 相关功能均不可用。</string>
     <string name="settings_smb_enable_auto_download">自动下载到 SMB</string>
