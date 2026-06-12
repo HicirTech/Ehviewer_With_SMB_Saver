@@ -79,9 +79,14 @@ public final class SmbPreviewCache {
             dir = sCacheDir;
             if (dir == null) {
                 dir = new File(EhApplication.getInstance().getCacheDir(), CACHE_SUBDIR);
-                if (!dir.exists()) {
-                    //noinspection ResultOfMethodCallIgnored
-                    dir.mkdirs();
+                if (!dir.exists() && !dir.mkdirs()) {
+                    // Don't memoise: a later call may succeed (disk full / permissions
+                    // cleared). Otherwise every subsequent cacheFileFor() would return a
+                    // path under a non-existent dir and every fetchOne() write would
+                    // silently fail with no log + no retry (the gid is already in the
+                    // PREFETCHED_GIDS dedup set).
+                    Log.w(TAG, "Failed to create SMB preview cache dir: " + dir);
+                    return dir;
                 }
                 sCacheDir = dir;
             }
