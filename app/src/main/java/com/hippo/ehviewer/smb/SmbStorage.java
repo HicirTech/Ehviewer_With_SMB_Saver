@@ -29,10 +29,9 @@ import com.hippo.lib.yorozuya.IOUtils;
 import com.hippo.unifile.UniFile;
 import com.hippo.util.IoThreadPoolExecutor;
 
-import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -991,14 +990,17 @@ public final class SmbStorage {
     }
 
     private static String readAll(InputStream is) throws IOException {
-        StringBuilder sb = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line);
-            }
+        // Byte-buffered read so JSON files round-trip unchanged. The previous readLine()
+        // loop silently dropped every line terminator, which is harmless for single-line
+        // JSON but corrupts pretty-printed metadata blobs and any future caller that
+        // expects the file's exact contents.
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int read;
+        while ((read = is.read(chunk)) != -1) {
+            buffer.write(chunk, 0, read);
         }
-        return sb.toString();
+        return buffer.toString(StandardCharsets.UTF_8.name());
     }
 
     private static void copyStream(InputStream in, OutputStream out) throws IOException {
