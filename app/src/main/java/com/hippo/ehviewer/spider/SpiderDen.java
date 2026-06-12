@@ -31,6 +31,7 @@ import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.gallery.GalleryProvider2;
+import com.hippo.ehviewer.smb.SmbStorage;
 import com.hippo.io.UniFileInputStreamPipe;
 import com.hippo.io.UniFileOutputStreamPipe;
 import com.hippo.streampipe.InputStreamPipe;
@@ -44,6 +45,7 @@ import com.hippo.lib.yorozuya.Utilities;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Locale;
 
@@ -165,6 +167,9 @@ public final class SpiderDen {
         if (mMode != SpiderQueen.MODE_DOWNLOAD) {
             return true;
         }
+        if (useSmbStorage()) {
+            return SmbStorage.prepareGalleryDir(mGalleryInfo);
+        }
         synchronized (mDownloadDirLock) {
             if (mDownloadDir == null) {
                 mDownloadDir = getGalleryDownloadDir(mGalleryInfo);
@@ -186,6 +191,9 @@ public final class SpiderDen {
             case SpiderQueen.MODE_READ:
                 return sCache != null;
             case SpiderQueen.MODE_DOWNLOAD:
+                if (useSmbStorage()) {
+                    return true;
+                }
                 synchronized (mDownloadDirLock) {
                     return mDownloadDir != null && mDownloadDir.isDirectory();
                 }
@@ -194,8 +202,67 @@ public final class SpiderDen {
         }
     }
 
+    private boolean useSmbStorage() {
+        // Per-gid intent mark. Regular DownloadManager downloads are NOT marked, so they
+        // write to phone storage exactly as before. Only SmbDirectDownloader (writes) and
+        // LocalInventoryScene reader launches (reads) mark the gid as SMB-targeted.
+        return SmbStorage.isGidMarkedSmbTarget(mGid);
+    }
+
+    /**
+     * Open an OutputStream for writing the per-gallery {@code .ehviewer} spider info file.
+     * Routes to SMB when the gallery is configured for SMB storage, otherwise writes to the
+     * local download directory.
+     */
+    @Nullable
+    public OutputStream openSpiderInfoOutputStream(String filename) {
+        if (useSmbStorage()) {
+            return SmbStorage.openSpiderInfoOutputStream(mGalleryInfo);
+        }
+        UniFile dir = getDownloadDir();
+        if (dir == null) {
+            return null;
+        }
+        UniFile file = dir.createFile(filename);
+        if (file == null) {
+            return null;
+        }
+        try {
+            return file.openOutputStream();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Open an InputStream for reading the per-gallery {@code .ehviewer} spider info file.
+     * Returns null if the file does not exist on the active storage backend.
+     */
+    @Nullable
+    public InputStream openSpiderInfoInputStream(String filename) {
+        if (useSmbStorage()) {
+            return SmbStorage.openSpiderInfoInputStream(mGalleryInfo);
+        }
+        UniFile dir = getDownloadDir();
+        if (dir == null) {
+            return null;
+        }
+        UniFile file = dir.findFile(filename);
+        if (file == null) {
+            return null;
+        }
+        try {
+            return file.openInputStream();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
     @Nullable
     public UniFile getDownloadDir() {
+        if (useSmbStorage()) {
+            return null;
+        }
         UniFile dir;
         synchronized (mDownloadDirLock) {
             dir = resolveDownloadDirLocked();
@@ -205,6 +272,9 @@ public final class SpiderDen {
 
     @Nullable
     public UniFile getDownloadDirName() {
+        if (useSmbStorage()) {
+            return null;
+        }
         synchronized (mDownloadDirLock) {
             return resolveDownloadDirLocked();
         }
@@ -239,6 +309,9 @@ public final class SpiderDen {
     }
 
     private boolean containInDownloadDir(int index) {
+        if (useSmbStorage()) {
+            return SmbStorage.containImage(mGalleryInfo, index);
+        }
         UniFile dir = getDownloadDir();
         if (dir == null) {
             return false;
@@ -328,6 +401,9 @@ public final class SpiderDen {
     }
 
     private boolean removeFromDownloadDir(int index) {
+        if (useSmbStorage()) {
+            return SmbStorage.removeImage(mGalleryInfo, index);
+        }
         UniFile dir = getDownloadDir();
         if (dir == null) {
             return false;
@@ -365,6 +441,9 @@ public final class SpiderDen {
      */
     @Nullable
     private OutputStreamPipe openDownloadOutputStreamPipe(int index, @Nullable String extension) {
+        if (useSmbStorage()) {
+            return SmbStorage.openSmbOutputStreamPipe(mGalleryInfo, index, extension);
+        }
         UniFile dir = getDownloadDir();
         if (dir == null) {
             return null;
@@ -386,7 +465,13 @@ public final class SpiderDen {
     @Nullable
     public OutputStreamPipe openOutputStreamPipe(int index, @Nullable String extension) {
         if (mMode == SpiderQueen.MODE_READ) {
-            // Return the download pipe is the gallery has been downloaded
+            // In MODE_READ we must not write to the persistent SMB share: SmbDirectDownloader
+            // (running in MODE_DOWNLOAD on the same queen) owns SMB persistence end-to-end.
+            // Otherwise every viewed page would also kick off an SMB write, wasting bandwidth.
+            if (useSmbStorage()) {
+                return openCacheOutputStreamPipe(index);
+            }
+            // Non-SMB mode: behave as before — prefer the local download dir, fall back to cache.
             OutputStreamPipe pipe = openDownloadOutputStreamPipe(index, extension);
             if (pipe == null) {
                 pipe = openCacheOutputStreamPipe(index);
@@ -412,6 +497,9 @@ public final class SpiderDen {
 
     @Nullable
     public InputStreamPipe openDownloadInputStreamPipe(int index) {
+        if (useSmbStorage()) {
+            return SmbStorage.openSmbInputStreamPipe(mGalleryInfo, index);
+        }
         UniFile dir = getDownloadDir();
         if (dir == null) {
             return null;
