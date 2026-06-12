@@ -103,6 +103,8 @@ import com.hippo.ehviewer.ui.scene.gallery.list.FavoritesScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.GalleryListScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.GalleryListSceneDialog;
 import com.hippo.ehviewer.ui.scene.history.HistoryScene;
+import com.hippo.ehviewer.smb.SmbAutoDownloadManager;
+import com.hippo.ehviewer.smb.SmbStorage;
 import com.hippo.ehviewer.util.ClipboardUtil;
 import com.hippo.ehviewer.widget.ArchiverDownloadProgress;
 import com.hippo.ehviewer.widget.GalleryRatingBar;
@@ -173,7 +175,10 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
     public static final String KEY_TOKEN = "token";
     public static final String KEY_PAGE = "page";
 
-    private static final String KEY_GALLERY_DETAIL = "gallery_detail";
+    public static final String KEY_GALLERY_DETAIL = "gallery_detail";
+    /** When true, the comments section is hidden — used by the Local Inventory scene
+     *  where there are no comments to show. */
+    public static final String KEY_HIDE_COMMENTS = "hide_comments";
     private static final String KEY_REQUEST_ID = "request_id";
 
     private static final boolean TRANSITION_ANIMATION_DISABLED = true;
@@ -292,6 +297,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
     @Nullable
     private GalleryDetail mGalleryDetail;
     private int mRequestId = IntIdGenerator.INVALID_ID;
+    private boolean mHideComments;
 
     @Nullable
     private TorrentDownloadController torrentDownloadController;
@@ -327,8 +333,19 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
 
         String action = args.getString(KEY_ACTION);
         mAction = action;
+        mHideComments = args.getBoolean(KEY_HIDE_COMMENTS, false);
         if (ACTION_GALLERY_INFO.equals(action)) {
             mGalleryInfo = args.getParcelable(KEY_GALLERY_INFO);
+            // Allow callers (e.g. LocalInventoryScene) to supply a fully-formed
+            // GalleryDetail so the scene can render entirely from local data
+            // without hitting the network.
+            GalleryDetail preloaded = args.getParcelable(KEY_GALLERY_DETAIL);
+            if (preloaded != null) {
+                mGalleryDetail = preloaded;
+                if (mGalleryInfo == null) {
+                    mGalleryInfo = preloaded;
+                }
+            }
             // Add history
             if (null != mGalleryInfo) {
                 EhDB.putHistoryInfo(mGalleryInfo);
@@ -634,7 +651,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
 
         mComments = (LinearLayout) ViewUtils.$$(belowHeader, R.id.comments);
         mCommentsText = (TextView) ViewUtils.$$(mComments, R.id.comments_text);
-        if (!Settings.getShowGalleryComment()) {
+        if (mHideComments || !Settings.getShowGalleryComment()) {
             mComments.setVisibility(View.GONE);
             mCommentsText.setVisibility(View.GONE);
         }
@@ -1710,7 +1727,15 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         GalleryInfo galleryInfo = getGalleryInfo();
         if (galleryInfo != null) {
             if (EhApplication.getDownloadManager(mContext).getDownloadState(galleryInfo.gid) == DownloadInfo.STATE_INVALID) {
-                CommonOperations.startDownload(activity, galleryInfo, false);
+                // The Download button always lets the user pick when SMB is enabled — the
+                // auto-download toggle only governs the implicit reader-triggered enqueue,
+                // not this explicit click. (Previously this also required auto-download
+                // OFF, which silently routed everything to phone when auto was on.)
+                if (Settings.getSmbSaveEnabled() && SmbStorage.isConfigured()) {
+                    promptDownloadTarget(galleryInfo);
+                } else {
+                    CommonOperations.startDownload(activity, galleryInfo, false);
+                }
             } else {
                 new AlertDialog.Builder(mContext)
                         .setTitle(R.string.download_remove_dialog_title)
@@ -1719,6 +1744,24 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                         .show();
             }
         }
+    }
+
+    private void promptDownloadTarget(@NonNull GalleryInfo galleryInfo) {
+        CharSequence[] items = new CharSequence[]{
+                getString(R.string.gallery_download_target_local),
+                getString(R.string.gallery_download_target_smb)
+        };
+        new AlertDialog.Builder(mContext)
+                .setTitle(R.string.gallery_download_target_title)
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        CommonOperations.startDownload(activity, galleryInfo, false);
+                    } else {
+                        SmbAutoDownloadManager.getInstance().enqueueManual(mContext, galleryInfo);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     public void startUpdateDownload(String updateUrl) {
