@@ -185,16 +185,50 @@ public final class SmbStorage {
      */
     public static boolean deleteGalleryFolder(@NonNull GalleryInfo info) {
         try {
-            SmbFile galleryDir = getGalleryDir(info);
+            // Build the directory reference without auto-creating it (getGalleryDir would
+            // mkdirs() on a missing dir, then we'd immediately try to delete what we just
+            // created — wasteful at best, wrong at worst if the dir never existed).
+            CIFSContext cifs = buildContext();
+            SmbFile shareRoot = new SmbFile(buildSmbUrl(), cifs);
+            SmbFile galleryDir = new SmbFile(shareRoot, buildGalleryFolderName(info) + "/");
             if (!galleryDir.exists()) {
                 return true;
             }
-            galleryDir.delete();
+            // jcifs-ng's SmbFile.delete() throws SmbException (STATUS_DIRECTORY_NOT_EMPTY)
+            // when the directory is non-empty. Delete all contents first, then the dir.
+            deleteSmbDirRecursive(galleryDir);
             return !galleryDir.exists();
         } catch (Throwable e) {
             Log.w(TAG, "Failed to delete SMB gallery folder gid=" + info.gid, e);
             return false;
         }
+    }
+
+    /**
+     * Recursively deletes {@code dir} and all of its contents on the SMB share.
+     * jcifs-ng requires a directory to be empty before {@link SmbFile#delete()} succeeds,
+     * so we traverse depth-first and delete files before their parent directories.
+     * <p>
+     * Deletion is best-effort: individual child failures are logged and skipped so that
+     * remaining siblings are still processed. The parent directory delete at the end will
+     * propagate any {@link IOException} if not all children were removed.
+     */
+    private static void deleteSmbDirRecursive(@NonNull SmbFile dir) throws IOException {
+        SmbFile[] children = dir.listFiles();
+        if (children != null) {
+            for (SmbFile child : children) {
+                try {
+                    if (child.isDirectory()) {
+                        deleteSmbDirRecursive(child);
+                    } else {
+                        child.delete();
+                    }
+                } catch (IOException e) {
+                    Log.w(TAG, "Could not delete SMB entry: " + child.getPath(), e);
+                }
+            }
+        }
+        dir.delete();
     }
 
     /**
