@@ -812,7 +812,10 @@ public final class SmbStorage {
                 if (!metadata.exists()) {
                     continue;
                 }
-                String json = readAll(metadata.getInputStream());
+                String json;
+                try (InputStream is = metadata.getInputStream()) {
+                    json = readAll(is);
+                }
                 JSONObject object = JSONObject.parseObject(json);
                 if (object == null) {
                     continue;
