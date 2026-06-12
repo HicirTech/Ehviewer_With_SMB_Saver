@@ -855,6 +855,78 @@ public class Settings {
         putBoolean(KEY_DOWNLOAD_ORIGIN_IMAGE, value);
     }
 
+    public static final String KEY_SMB_SAVE_ENABLED = "smb_save_enabled";
+    private static final boolean DEFAULT_SMB_SAVE_ENABLED = false;
+
+    public static boolean getSmbSaveEnabled() {
+        return getBoolean(KEY_SMB_SAVE_ENABLED, DEFAULT_SMB_SAVE_ENABLED);
+    }
+
+    public static final String KEY_SMB_AUTO_DOWNLOAD_ENABLED = "smb_auto_download_enabled";
+    private static final boolean DEFAULT_SMB_AUTO_DOWNLOAD_ENABLED = false;
+
+    public static boolean getSmbAutoDownloadEnabled() {
+        return getBoolean(KEY_SMB_AUTO_DOWNLOAD_ENABLED, DEFAULT_SMB_AUTO_DOWNLOAD_ENABLED);
+    }
+
+    public static final String KEY_SMB_HOST = "smb_host";
+    private static final String DEFAULT_SMB_HOST = "";
+
+    @NonNull
+    public static String getSmbHost() {
+        String value = getString(KEY_SMB_HOST, DEFAULT_SMB_HOST);
+        return value != null ? value.trim() : "";
+    }
+
+    public static final String KEY_SMB_PORT = "smb_port";
+    private static final String DEFAULT_SMB_PORT = "445";
+
+    @NonNull
+    public static String getSmbPort() {
+        String value = getString(KEY_SMB_PORT, DEFAULT_SMB_PORT);
+        return value != null ? value.trim() : "445";
+    }
+
+    public static final String KEY_SMB_SHARE_NAME = "smb_share_name";
+    private static final String DEFAULT_SMB_SHARE_NAME = "";
+
+    @NonNull
+    public static String getSmbShareName() {
+        String value = getString(KEY_SMB_SHARE_NAME, DEFAULT_SMB_SHARE_NAME);
+        return value != null ? value.trim() : "";
+    }
+
+    public static final String KEY_SMB_SHARE_PATH = "smb_share_path";
+    private static final String DEFAULT_SMB_SHARE_PATH = "/";
+
+    @NonNull
+    public static String getSmbSharePath() {
+        String value = getString(KEY_SMB_SHARE_PATH, DEFAULT_SMB_SHARE_PATH);
+        if (value == null) value = "/";
+        value = value.trim();
+        if (!value.startsWith("/")) value = "/" + value;
+        if (!value.endsWith("/")) value = value + "/";
+        return value;
+    }
+
+    public static final String KEY_SMB_USERNAME = "smb_username";
+    private static final String DEFAULT_SMB_USERNAME = "";
+
+    @NonNull
+    public static String getSmbUsername() {
+        String value = getString(KEY_SMB_USERNAME, DEFAULT_SMB_USERNAME);
+        return value != null ? value : "";
+    }
+
+    public static final String KEY_SMB_PASSWORD = "smb_password";
+    private static final String DEFAULT_SMB_PASSWORD = "";
+
+    @NonNull
+    public static String getSmbPassword() {
+        String value = getString(KEY_SMB_PASSWORD, DEFAULT_SMB_PASSWORD);
+        return value != null ? value : "";
+    }
+
     /********************
      ****** Favorites
      ********************/
