@@ -1,5 +1,6 @@
 package com.hippo.ehviewer.ui.fragment;
 
+import android.content.Context;
 import android.os.Bundle;
 import android.text.InputType;
 import android.widget.Toast;
@@ -200,19 +201,29 @@ public class SmbSettingsFragment extends PreferenceFragmentCompat implements Pre
     }
 
     private void testConnection() {
+        // Snapshot the application context before going off-thread. Using the fragment's
+        // getActivity()/getContext() from the worker would NPE if the user navigates away
+        // from the Settings screen while the SMB probe is still running.
+        Context context = getContext();
+        if (context == null) {
+            return;
+        }
+        final Context appContext = context.getApplicationContext();
         IoThreadPoolExecutor.Companion.getInstance().execute(() -> {
+            CharSequence message;
             try {
                 SmbStorage.testConnection();
-                getActivity().runOnUiThread(() ->
-                    Toast.makeText(getContext(), R.string.settings_smb_test_success, Toast.LENGTH_SHORT).show()
-                );
+                message = appContext.getString(R.string.settings_smb_test_success);
             } catch (Exception e) {
-                getActivity().runOnUiThread(() ->
-                    Toast.makeText(getContext(),
-                        getString(R.string.settings_smb_test_failed, e.getMessage()),
-                        Toast.LENGTH_LONG).show()
-                );
+                message = appContext.getString(R.string.settings_smb_test_failed, e.getMessage());
             }
+            final CharSequence toastText = message;
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                try {
+                    Toast.makeText(appContext, toastText, Toast.LENGTH_SHORT).show();
+                } catch (Throwable ignored) {
+                }
+            });
         });
     }
 }
