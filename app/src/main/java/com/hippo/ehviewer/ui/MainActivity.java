@@ -72,6 +72,7 @@ import com.hippo.ehviewer.client.EhTagDatabase;
 import com.hippo.ehviewer.client.EhUrl;
 import com.hippo.ehviewer.client.EhUrlOpener;
 import com.hippo.ehviewer.client.EhUtils;
+import com.hippo.ehviewer.client.data.FavListUrlBuilder;
 import com.hippo.ehviewer.client.data.ListUrlBuilder;
 import com.hippo.ehviewer.ui.main.UserImageChange;
 import com.hippo.ehviewer.ui.scene.AnalyticsScene;
@@ -80,6 +81,7 @@ import com.hippo.ehviewer.ui.scene.sign.CookieSignInScene;
 import com.hippo.ehviewer.ui.scene.download.DownloadLabelsScene;
 import com.hippo.ehviewer.ui.scene.download.DownloadsScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.FavoritesScene;
+import com.hippo.ehviewer.ui.scene.localinventory.LocalInventoryScene;
 import com.hippo.ehviewer.ui.scene.GalleryCommentsScene;
 import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryDetailScene;
 import com.hippo.ehviewer.ui.scene.GalleryInfoScene;
@@ -191,6 +193,7 @@ public final class MainActivity extends StageActivity
         registerLaunchMode(DownloadsScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
         registerLaunchMode(DownloadLabelsScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
         registerLaunchMode(FavoritesScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
+        registerLaunchMode(LocalInventoryScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
         registerLaunchMode(HistoryScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TOP);
         registerLaunchMode(ProgressScene.class, SceneFragment.LAUNCH_MODE_STANDARD);
     }
@@ -416,6 +419,7 @@ public final class MainActivity extends StageActivity
 //            }
             mNavView.setNavigationItemSelectedListener(this);
         }
+        updateLocalInventoryMenuVisibility();
         if (Settings.getTheme() == 0) {
             mChangeTheme.setTextColor(getColor(R.color.theme_change_light));
 
@@ -625,8 +629,19 @@ public final class MainActivity extends StageActivity
         super.onResume();
 
         setNavCheckedItem(mNavCheckedItem);
+        updateLocalInventoryMenuVisibility();
 
         checkClipboardUrl();
+    }
+
+    private void updateLocalInventoryMenuVisibility() {
+        if (mNavView == null) {
+            return;
+        }
+        MenuItem item = mNavView.getMenu().findItem(R.id.nav_local_inventory);
+        if (item != null) {
+            item.setVisible(Settings.getSmbSaveEnabled());
+        }
     }
 
     @Override
@@ -920,6 +935,9 @@ public final class MainActivity extends StageActivity
             case R.id.nav_downloads:
                 startScene(new Announcer(DownloadsScene.class));
                 break;
+            case R.id.nav_local_inventory:
+                startScene(new Announcer(LocalInventoryScene.class));
+                break;
             case R.id.nav_settings:
                 Intent intent = new Intent(this, SettingsActivity.class);
                 startActivityForResult(intent, REQUEST_CODE_SETTINGS);
@@ -964,6 +982,9 @@ public final class MainActivity extends StageActivity
         if (limitsCountView != null) {
             limitsCountView.onLoadData(drawerView, true);
         }
+        // Re-evaluate on every drawer open so a Settings toggle takes effect even when
+        // MainActivity wasn't paused (e.g. setting flipped via in-process callbacks).
+        updateLocalInventoryMenuVisibility();
     }
 
     @Override

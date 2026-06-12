@@ -927,6 +927,22 @@ public class Settings {
         return value != null ? value : "";
     }
 
+    /**
+     * Local Inventory sort mode. Values map to {@code SmbStorage.SortMode} ordinals
+     * (0=DOWNLOAD_DATE_DESC, 1=POSTED_DATE_DESC, 2=TITLE_ASC, 3=CATEGORY).
+     * Persisted so the user's preferred order is remembered across sessions.
+     */
+    public static final String KEY_LOCAL_INVENTORY_SORT = "local_inventory_sort";
+    private static final int DEFAULT_LOCAL_INVENTORY_SORT = 0;
+
+    public static int getLocalInventorySort() {
+        return getInt(KEY_LOCAL_INVENTORY_SORT, DEFAULT_LOCAL_INVENTORY_SORT);
+    }
+
+    public static void putLocalInventorySort(int value) {
+        putInt(KEY_LOCAL_INVENTORY_SORT, value);
+    }
+
     /********************
      ****** Favorites
      ********************/
