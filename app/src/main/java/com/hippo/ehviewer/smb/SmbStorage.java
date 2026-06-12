@@ -33,6 +33,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -103,12 +105,24 @@ public final class SmbStorage {
 
         StringBuilder url = new StringBuilder("smb://");
         url.append(host);
-        
+
         if (!TextUtils.isEmpty(port) && !port.equals("445")) {
             url.append(":").append(port);
         }
-        
-        url.append("/").append(shareName).append(sharePath);
+
+        // Share names from typical NAS configs may contain spaces or other reserved
+        // characters ("Public Documents", "Family$"). jcifs needs them percent-encoded
+        // in the URL form. URLEncoder yields x-www-form-urlencoded output, so convert
+        // its "+" back to "%20" to stay within the smb-URL grammar.
+        String encodedShare = shareName;
+        if (!TextUtils.isEmpty(shareName)) {
+            try {
+                encodedShare = URLEncoder.encode(shareName, "UTF-8").replace("+", "%20");
+            } catch (UnsupportedEncodingException ignored) {
+                // UTF-8 is guaranteed; fall back to the raw value.
+            }
+        }
+        url.append("/").append(encodedShare).append(sharePath);
         return url.toString();
     }
 
