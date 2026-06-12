@@ -1029,4 +1029,65 @@
     <string name="imported_archive_info_message">這是從本機儲存空間匯入的項目</string>
     <string name="imported_archive_category">本機匯入</string>
 
+    <!-- SMB save feature -->
+    <string name="local_inventory">SMB 庫</string>
+    <string name="local_inventory_empty">SMB 共享中尚無畫廊</string>
+    <string name="local_inventory_loading">正在從 SMB 共享讀取…</string>
+    <string name="local_inventory_disabled">請喺設定中啟用「儲存到 SMB」並設定共享</string>
+    <string name="local_inventory_error">從 SMB 讀取失敗：%s</string>
+    <string name="local_inventory_timeout">SMB 共享 7 秒內無回應</string>
+    <string name="local_inventory_sort_title">排序方式</string>
+    <string name="local_inventory_sort_download_date">下載時間（由新到舊）</string>
+    <string name="local_inventory_sort_posted_date">發佈時間（由新到舊）</string>
+    <string name="local_inventory_sort_title_az">標題（A–Z）</string>
+    <string name="local_inventory_sort_category">類別</string>
+
+    <string name="smb_download_channel_name">SMB 儲存</string>
+    <string name="smb_download_notif_title">正在儲存到 SMB</string>
+    <string name="smb_download_notif_preparing">準備中…</string>
+    <string name="smb_save_started">已開始儲存到 SMB：%s</string>
+    <string name="smb_save_already_complete">已儲存到 SMB，略過</string>
+    <string name="smb_save_not_configured">未設定 SMB</string>
+    <string name="smb_download_tasks">SMB 下載任務</string>
+    <string name="smb_download_tasks_empty">暫無 SMB 下載任務</string>
+    <string name="smb_task_state_active">下載中</string>
+    <string name="smb_task_state_queued">排隊中</string>
+    <string name="smb_task_state_paused">已暫停</string>
+    <string name="smb_task_pause">暫停</string>
+    <string name="smb_task_resume">繼續</string>
+    <string name="smb_task_cancel">取消</string>
+    <string name="smb_task_cancel_confirm">取消呢個 SMB 任務？已下載到共享上嘅部分圖片亦會一齊刪除。</string>
+
+    <string name="gallery_download_target_title">下載去邊度？</string>
+    <string name="gallery_download_target_local">下載到手機</string>
+    <string name="gallery_download_target_smb">下載到 SMB 共享</string>
+
+    <string name="download_move_to_smb">移動到 SMB 共享</string>
+    <string name="download_moved_to_smb">已移動 %1$d / %2$d 個畫廊到 SMB</string>
+    <string name="download_moving_to_smb">正在複製到 SMB 共享…</string>
+
+    <string name="settings_smb">SMB 設定</string>
+    <string name="settings_smb_enable_save">儲存畫廊到 SMB</string>
+    <string name="settings_smb_enable_save_summary">SMB 儲存總開關。關閉時，所有 SMB 相關功能均不可用。</string>
+    <string name="settings_smb_enable_auto_download">自動下載到 SMB</string>
+    <string name="settings_smb_enable_auto_download_summary">啟用後，開啟畫廊嘅第一頁會自動喺背景排隊下載到 SMB。關閉時，按下載按鈕會每次詢問。</string>
+    <string name="settings_smb_share_path">SMB 共享路徑</string>
+    <string name="settings_smb_share_path_summary">共享內嘅子路徑，例如：/ehviewer/（以 / 開頭）</string>
+    <string name="settings_smb_host">SMB 主機</string>
+    <string name="settings_smb_host_summary">例如：192.168.1.10</string>
+    <string name="settings_smb_port">SMB 連接埠</string>
+    <string name="settings_smb_port_summary">預設：445</string>
+    <string name="settings_smb_share_name">SMB 共享名稱</string>
+    <string name="settings_smb_share_name_summary">例如：share</string>
+    <string name="settings_smb_username">SMB 用戶名</string>
+    <string name="settings_smb_username_summary">選填，留空則以訪客身分連線</string>
+    <string name="settings_smb_password">SMB 密碼</string>
+    <string name="settings_smb_password_summary">選填，留空則以訪客身分連線</string>
+    <string name="settings_smb_test">測試連線</string>
+    <string name="settings_smb_test_success">SMB 連線成功！</string>
+    <string name="settings_smb_test_failed">SMB 連線失敗：%s</string>
+    <string name="settings_smb_invalid_config">SMB 已啟用，但共享設定唔完整</string>
+    <string name="settings_smb_field_unset">點擊設定</string>
+    <string name="settings_smb_field_unset_password">點擊設定密碼</string>
+
 </resources>
