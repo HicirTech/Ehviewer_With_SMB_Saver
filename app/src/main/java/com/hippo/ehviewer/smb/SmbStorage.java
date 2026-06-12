@@ -631,7 +631,18 @@ public final class SmbStorage {
                 copyUniDir(child, subDir);
             } else {
                 SmbFile targetFile = new SmbFile(targetDir, name);
-                copyStream(child.openInputStream(), targetFile.getOutputStream());
+                // Open the source first, hold it in a local so it's closed even if opening
+                // the SMB output stream throws (Java evaluates args left-to-right, so a
+                // throw from getOutputStream() would otherwise leak the already-open input).
+                InputStream in = child.openInputStream();
+                OutputStream out;
+                try {
+                    out = targetFile.getOutputStream();
+                } catch (IOException e) {
+                    IOUtils.closeQuietly(in);
+                    throw e;
+                }
+                copyStream(in, out);
             }
         }
     }
@@ -717,7 +728,18 @@ public final class SmbStorage {
                 }
             }
             SmbFile coverFile = new SmbFile(galleryDir, "cover" + extension);
-            copyStream(response.body().byteStream(), coverFile.getOutputStream());
+            // Open source first; the response body's byteStream is owned by the response
+            // (closed via try-with-resources) so we just need to make sure the SMB output
+            // open failing doesn't drop a still-uncopied body on the floor.
+            InputStream in = response.body().byteStream();
+            OutputStream out;
+            try {
+                out = coverFile.getOutputStream();
+            } catch (IOException e) {
+                IOUtils.closeQuietly(in);
+                throw e;
+            }
+            copyStream(in, out);
         } catch (Throwable e) {
             Log.w(TAG, "Failed to download cover", e);
         }
