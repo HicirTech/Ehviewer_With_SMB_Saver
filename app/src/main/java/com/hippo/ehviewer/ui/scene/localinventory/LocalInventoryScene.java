@@ -36,6 +36,7 @@ import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
+import com.hippo.ehviewer.smb.SmbCoverDataContainer;
 import com.hippo.ehviewer.smb.SmbStorage;
 import com.hippo.ehviewer.ui.GalleryActivity;
 import com.hippo.ehviewer.ui.scene.ToolbarScene;
@@ -403,7 +404,14 @@ public class LocalInventoryScene extends ToolbarScene
         @Override
         public void onBindViewHolder(InventoryHolder holder, int position) {
             GalleryInfo gi = mList.get(position);
-            holder.thumb.load(EhCacheKeyFactory.getThumbKey(gi.gid), gi.thumb);
+            // Route the cover load through SmbCoverDataContainer so Conaco reads cover.<ext>
+            // straight from the SMB share (saved alongside the gallery at download time)
+            // instead of hitting e-hentai for the thumbnail URL. useNetwork=false makes the
+            // load offline-only — if the on-share cover is missing the cell just stays empty
+            // rather than silently leaking out to the network.
+            holder.thumb.load(EhCacheKeyFactory.getThumbKey(gi.gid),
+                    gi.thumb != null ? gi.thumb : ("smb-cover://" + gi.gid),
+                    new SmbCoverDataContainer(gi.gid, gi.title), false, false);
             // Tap the thumbnail to jump straight into the reader (offline-friendly path).
             // Tapping anywhere else on the card opens the gallery detail page (handled by the
             // RecyclerView's OnItemClickListener).

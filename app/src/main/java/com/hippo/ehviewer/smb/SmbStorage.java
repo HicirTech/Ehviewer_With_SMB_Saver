@@ -318,6 +318,86 @@ public final class SmbStorage {
         }
     }
 
+    /**
+     * Locates the {@code cover.<ext>} file written by {@link #downloadAndWriteCover}. We try
+     * every image extension the rest of the stack supports, since cover's extension depends
+     * on the upstream Content-Type at the time of save.
+     */
+    @Nullable
+    private static SmbFile findSmbCoverFile(@NonNull GalleryInfo info) throws IOException {
+        SmbFile galleryDir = getGalleryDir(info);
+        for (String extension : com.hippo.ehviewer.gallery.GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
+            SmbFile file = new SmbFile(galleryDir, "cover" + extension);
+            if (file.exists()) {
+                return file;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Stage the on-share cover to a local temp file and return a {@link FileInputStream}-backed
+     * pipe. Conaco's image decoder requires a real file descriptor (same constraint as page
+     * loads), so SmbFileInputStream cannot be returned directly.
+     */
+    @Nullable
+    public static InputStreamPipe openSmbCoverInputStreamPipe(@NonNull GalleryInfo info) {
+        try {
+            final SmbFile file = findSmbCoverFile(info);
+            if (file == null) {
+                return null;
+            }
+            return new InputStreamPipe() {
+                private java.io.FileInputStream fis;
+                private java.io.File tempFile;
+
+                @Override public void obtain() {}
+
+                @Override public void release() {}
+
+                @Override
+                public InputStream open() throws IOException {
+                    if (fis != null) {
+                        throw new IllegalStateException("Please close it first");
+                    }
+                    java.io.File dir = new java.io.File(
+                            EhApplication.getInstance().getCacheDir(), "smb_tmp");
+                    if (!dir.exists()) {
+                        //noinspection ResultOfMethodCallIgnored
+                        dir.mkdirs();
+                    }
+                    tempFile = java.io.File.createTempFile("smb_cover_", null, dir);
+                    InputStream remote = null;
+                    OutputStream local = null;
+                    try {
+                        remote = file.getInputStream();
+                        local = new java.io.FileOutputStream(tempFile);
+                        IOUtils.copy(remote, local);
+                    } finally {
+                        IOUtils.closeQuietly(remote);
+                        IOUtils.closeQuietly(local);
+                    }
+                    fis = new java.io.FileInputStream(tempFile);
+                    return fis;
+                }
+
+                @Override
+                public void close() {
+                    IOUtils.closeQuietly(fis);
+                    fis = null;
+                    if (tempFile != null) {
+                        //noinspection ResultOfMethodCallIgnored
+                        tempFile.delete();
+                        tempFile = null;
+                    }
+                }
+            };
+        } catch (Throwable e) {
+            Log.e(TAG, "Failed to open SMB cover pipe gid=" + info.gid, e);
+            return null;
+        }
+    }
+
     public static boolean containImage(@NonNull GalleryInfo info, int index) {
         try {
             return findSmbImageFile(info, index) != null;
