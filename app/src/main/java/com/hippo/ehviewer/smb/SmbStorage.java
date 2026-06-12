@@ -84,16 +84,6 @@ public final class SmbStorage {
                 !TextUtils.isEmpty(Settings.getSmbShareName());
     }
 
-    /**
-     * @deprecated Routing is now per-gid via {@link #isGidMarkedSmbTarget(long)}. Kept only
-     *             so callers checking "could this gallery use SMB" still compile; never use
-     *             this for actual write routing decisions.
-     */
-    @Deprecated
-    public static boolean shouldUseSmbStorage(@NonNull GalleryInfo info) {
-        return Settings.getSmbSaveEnabled() && isConfigured();
-    }
-
     @NonNull
     private static CIFSContext buildContext() {
         String username = Settings.getSmbUsername();
