@@ -277,9 +277,16 @@ public final class SmbDirectDownloader {
                     return;
                 }
             }
-            if (appContext != null) {
-                start(appContext, info);
+            Context ctx = appContext;
+            if (ctx == null) {
+                // Should only happen if resume() runs before any start() / attachService()
+                // has latched a context (e.g. after process restart with a task restored
+                // from a future persistent backing store). Log so the silent no-op is
+                // visible in logcat instead of looking like a UI bug.
+                Log.w(TAG, "resume: appContext is null, cannot re-enqueue gid=" + gid);
+                return;
             }
+            start(ctx, info);
         });
     }
 
