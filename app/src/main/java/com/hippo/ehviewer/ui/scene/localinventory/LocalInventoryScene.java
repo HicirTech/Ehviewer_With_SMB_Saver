@@ -242,6 +242,15 @@ public class LocalInventoryScene extends ToolbarScene
         }
         mLoading = true;
         final SmbStorage.SortMode mode = SmbStorage.SortMode.fromOrdinal(Settings.getLocalInventorySort());
+        // Snapshot the application context up front. The Runnable below runs on the worker
+        // pool and the SimpleHandler.post lambdas run on the main thread; both can fire
+        // after onDestroyView has detached the fragment. Calling Fragment.getString from
+        // there would throw IllegalStateException. The app context lives for the process,
+        // so it's safe regardless of scene lifecycle.
+        Context ctxSnapshot = getEHContext();
+        final Context appContext = ctxSnapshot != null
+                ? ctxSnapshot.getApplicationContext()
+                : EhApplication.getInstance();
         Runnable task = () -> {
             final List<GalleryInfo> loaded;
             try {
@@ -260,7 +269,7 @@ public class LocalInventoryScene extends ToolbarScene
                     loaded = fut.get(7, TimeUnit.SECONDS);
                 } catch (TimeoutException te) {
                     fut.cancel(true);
-                    throw new java.io.IOException(getString(R.string.local_inventory_timeout));
+                    throw new java.io.IOException(appContext.getString(R.string.local_inventory_timeout));
                 } finally {
                     pool.shutdownNow();
                 }
@@ -268,7 +277,7 @@ public class LocalInventoryScene extends ToolbarScene
                 SimpleHandler.getInstance().post(() -> {
                     mLoading = false;
                     if (mTip != null) {
-                        mTip.setText(getString(R.string.local_inventory_error, e.getMessage()));
+                        mTip.setText(appContext.getString(R.string.local_inventory_error, e.getMessage()));
                     }
                     if (mViewTransition != null) {
                         mViewTransition.showView(1, true);
