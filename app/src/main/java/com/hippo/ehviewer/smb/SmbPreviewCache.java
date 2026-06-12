@@ -64,14 +64,27 @@ public final class SmbPreviewCache {
     private static final Set<Long> PREFETCHED_GIDS =
             Collections.synchronizedSet(new HashSet<>());
 
+    /** Lazily resolved and memoised cache directory so we don't re-stat it per call. */
+    private static volatile File sCacheDir;
+
     private SmbPreviewCache() {}
 
     @NonNull
     private static File cacheDir() {
-        File dir = new File(EhApplication.getInstance().getCacheDir(), CACHE_SUBDIR);
-        if (!dir.exists()) {
-            //noinspection ResultOfMethodCallIgnored
-            dir.mkdirs();
+        File dir = sCacheDir;
+        if (dir != null) {
+            return dir;
+        }
+        synchronized (SmbPreviewCache.class) {
+            dir = sCacheDir;
+            if (dir == null) {
+                dir = new File(EhApplication.getInstance().getCacheDir(), CACHE_SUBDIR);
+                if (!dir.exists()) {
+                    //noinspection ResultOfMethodCallIgnored
+                    dir.mkdirs();
+                }
+                sCacheDir = dir;
+            }
         }
         return dir;
     }
@@ -88,6 +101,11 @@ public final class SmbPreviewCache {
     /**
      * Kicks off a parallel SMB → local prefetch for every page of the gallery, exactly
      * once per process lifetime. Safe to call from any thread; returns immediately.
+     *
+     * <p>The fan-out loop itself runs on the prefetch pool rather than the caller's thread:
+     * for big galleries (200+ pages) allocating N lambdas + N {@code LinkedBlockingQueue.put}
+     * calls inline took long enough to cause a visible one-frame stutter when the preview
+     * grid first bound on the UI thread.
      */
     public static void prefetchGallery(long gid, @Nullable String title, int pages) {
         if (pages <= 0 || !SmbStorage.isConfigured()) {
@@ -97,6 +115,11 @@ public final class SmbPreviewCache {
             return;
         }
         final GalleryInfo lookup = SmbStorage.lookupKey(gid, title);
+        // One short-lived dispatch task; pages-many per-page tasks are queued from inside it.
+        PREFETCH_EXECUTOR.execute(() -> dispatchPages(lookup, gid, pages));
+    }
+
+    private static void dispatchPages(@NonNull GalleryInfo lookup, long gid, int pages) {
         final AtomicInteger remaining = new AtomicInteger(pages);
         for (int i = 0; i < pages; i++) {
             final int index = i;
