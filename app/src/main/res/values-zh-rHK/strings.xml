@@ -1045,6 +1045,15 @@
     <string name="smb_download_channel_name">SMB 儲存</string>
     <string name="smb_download_notif_title">正在儲存到 SMB</string>
     <string name="smb_download_notif_preparing">準備中…</string>
+    <string name="smb_notif_move_title">移動到 SMB：%s</string>
+    <string name="smb_notif_move_progress">%1$d/%2$d</string>
+    <string name="smb_notif_move_progress_more">%1$d/%2$d  （另 %3$d 批）</string>
+    <string name="smb_notif_queue_title">SMB 儲存</string>
+    <string name="smb_notif_queue_waiting">%d 個等待中</string>
+    <string name="smb_notif_extra_waiting">  （另 %d 個等待）</string>
+    <string name="smb_notif_extra_move">  （另 %d 個移動）</string>
+    <string name="smb_notif_progress_starting">啟動中…%s</string>
+    <string name="smb_notif_progress_count">%1$d/%2$d%3$s</string>
     <string name="smb_save_started">已開始儲存到 SMB：%s</string>
     <string name="smb_save_already_complete">已儲存到 SMB，略過</string>
     <string name="smb_save_not_configured">未設定 SMB</string>

@@ -503,6 +503,15 @@
     <string name="smb_download_channel_name">SMB Save</string>
     <string name="smb_download_notif_title">Saving to SMB</string>
     <string name="smb_download_notif_preparing">Preparing…</string>
+    <string name="smb_notif_move_title">Move to SMB: %s</string>
+    <string name="smb_notif_move_progress">%1$d/%2$d</string>
+    <string name="smb_notif_move_progress_more">%1$d/%2$d  (+%3$d batches)</string>
+    <string name="smb_notif_queue_title">SMB save</string>
+    <string name="smb_notif_queue_waiting">%d waiting</string>
+    <string name="smb_notif_extra_waiting">  (+%d waiting)</string>
+    <string name="smb_notif_extra_move">  (+%d move)</string>
+    <string name="smb_notif_progress_starting">Starting…%s</string>
+    <string name="smb_notif_progress_count">%1$d/%2$d%3$s</string>
     <string name="smb_save_started">SMB save started: %s</string>
     <string name="smb_save_already_complete">Already saved to SMB, skipping</string>
     <string name="smb_save_not_configured">SMB is not configured</string>

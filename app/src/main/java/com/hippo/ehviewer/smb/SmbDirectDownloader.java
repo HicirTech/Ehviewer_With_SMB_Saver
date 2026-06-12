@@ -7,6 +7,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.hippo.ehviewer.EhApplication;
+import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.spider.SpiderQueen;
 import com.hippo.lib.image.Image;
@@ -390,6 +391,10 @@ public final class SmbDirectDownloader {
         int max;
         int prog;
         boolean indeterminate;
+        // Resolve a context up front for string lookups. Fall back to the global
+        // EhApplication instance if the per-instance appContext hasn't been latched yet
+        // (e.g. notification fires before the service has called attachService).
+        final Context ctx = appContext != null ? appContext : EhApplication.getInstance();
         synchronized (lock) {
             svc = service;
             if (svc == null) {
@@ -402,16 +407,20 @@ public final class SmbDirectDownloader {
             if (active.isEmpty()) {
                 if (!moveBatches.isEmpty()) {
                     MoveBatch mv = moveBatches.values().iterator().next();
-                    title = "Move to SMB: " + (mv.currentItemTitle != null
-                            ? mv.currentItemTitle : (mv.finished + "/" + mv.total));
-                    text = mv.finished + "/" + mv.total
-                            + (moveBatches.size() > 1 ? "  (+" + (moveBatches.size() - 1) + " batches)" : "");
+                    String titleSubject = mv.currentItemTitle != null
+                            ? mv.currentItemTitle
+                            : ctx.getString(R.string.smb_notif_move_progress, mv.finished, mv.total);
+                    title = ctx.getString(R.string.smb_notif_move_title, titleSubject);
+                    text = moveBatches.size() > 1
+                            ? ctx.getString(R.string.smb_notif_move_progress_more,
+                                    mv.finished, mv.total, moveBatches.size() - 1)
+                            : ctx.getString(R.string.smb_notif_move_progress, mv.finished, mv.total);
                     max = mv.total;
                     prog = mv.finished;
                     indeterminate = mv.total <= 0;
                 } else if (queued > 0) {
-                    title = "SMB save";
-                    text = queued + " waiting";
+                    title = ctx.getString(R.string.smb_notif_queue_title);
+                    text = ctx.getString(R.string.smb_notif_queue_waiting, queued);
                     max = 0;
                     prog = 0;
                     indeterminate = true;
@@ -425,15 +434,19 @@ public final class SmbDirectDownloader {
                 int total = p != null ? p[1] : 0;
                 title = job.info.title != null ? job.info.title : ("gid " + job.info.gid);
                 StringBuilder extras = new StringBuilder();
-                if (queued > 0) extras.append("  (+").append(queued).append(" waiting)");
-                if (!moveBatches.isEmpty()) extras.append("  (+").append(moveBatches.size()).append(" move)");
+                if (queued > 0) {
+                    extras.append(ctx.getString(R.string.smb_notif_extra_waiting, queued));
+                }
+                if (!moveBatches.isEmpty()) {
+                    extras.append(ctx.getString(R.string.smb_notif_extra_move, moveBatches.size()));
+                }
                 if (total > 0) {
-                    text = finished + "/" + total + extras;
+                    text = ctx.getString(R.string.smb_notif_progress_count, finished, total, extras.toString());
                     max = total;
                     prog = finished;
                     indeterminate = false;
                 } else {
-                    text = "Starting..." + extras;
+                    text = ctx.getString(R.string.smb_notif_progress_starting, extras.toString());
                     max = 0;
                     prog = 0;
                     indeterminate = true;
