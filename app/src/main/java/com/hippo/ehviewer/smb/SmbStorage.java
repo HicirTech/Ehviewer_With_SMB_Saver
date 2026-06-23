@@ -38,7 +38,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 
@@ -795,42 +794,20 @@ public final class SmbStorage {
         }
     }
 
-    /**
-     * How the local inventory list should be ordered. Persisted via
-     * {@link com.hippo.ehviewer.Settings#getLocalInventorySort()}; the int stored there is the
-     * ordinal of one of these constants — keep the order stable.
-     */
-    public enum SortMode {
-        /** Most recently downloaded first (mtime of metadata.json on the share). */
-        DOWNLOAD_DATE_DESC,
-        /** Most recently posted to the site first (uses {@link GalleryInfo#posted}). */
-        POSTED_DATE_DESC,
-        /** A-Z by title. */
-        TITLE_ASC,
-        /** Grouped by gallery category (doujinshi, manga, ...) then by title. */
-        CATEGORY;
-
-        public static SortMode fromOrdinal(int o) {
-            SortMode[] all = values();
-            return o >= 0 && o < all.length ? all[o] : DOWNLOAD_DATE_DESC;
-        }
-    }
-
     @NonNull
     public static List<GalleryInfo> loadInventory() {
-        return loadInventory(SortMode.DOWNLOAD_DATE_DESC);
+        return loadInventory(SmbSortMode.DOWNLOAD_DATE_DESC);
     }
 
     @NonNull
-    public static List<GalleryInfo> loadInventory(@NonNull SortMode mode) {
+    public static List<GalleryInfo> loadInventory(@NonNull SmbSortMode mode) {
         if (!isConfigured()) {
             return new ArrayList<>();
         }
 
-        // Parallel arrays so we can sort by metadata.json mtime without smearing
-        // download time onto GalleryInfo (which has no such field).
-        List<GalleryInfo> infos = new ArrayList<>();
-        List<Long> downloadedAt = new ArrayList<>();
+        // Collect (gallery, metadata.json mtime) entries: the mtime feeds the
+        // DOWNLOAD_DATE_DESC ordering and isn't a field on GalleryInfo. Other modes ignore it.
+        List<SmbSortMode.Entry> entries = new ArrayList<>();
         try {
             CIFSContext cifs = buildContext();
             SmbFile shareRoot = new SmbFile(buildSmbUrl(), cifs);
@@ -858,65 +835,31 @@ public final class SmbStorage {
                     continue;
                 }
                 GalleryInfo info = GalleryInfo.galleryInfoFromJson(object);
-                infos.add(info);
                 long mtime;
                 try {
                     mtime = metadata.lastModified();
                 } catch (Throwable ignored) {
                     mtime = 0L;
                 }
-                downloadedAt.add(mtime);
+                entries.add(new SmbSortMode.Entry(info, mtime));
             }
         } catch (Throwable e) {
             Log.e(TAG, "Failed to load SMB inventory", e);
-            return infos;
+            // Return whatever was collected before the failure, in insertion order.
+            return toGalleryList(entries);
         }
 
-        // Sort by zipping the two arrays into Integer indices, sorting those, then rebuilding.
-        Integer[] order = new Integer[infos.size()];
-        for (int i = 0; i < order.length; i++) order[i] = i;
-        Comparator<Integer> cmp = buildSortComparator(mode, infos, downloadedAt);
-        java.util.Arrays.sort(order, cmp);
-        List<GalleryInfo> sorted = new ArrayList<>(infos.size());
-        for (Integer idx : order) {
-            sorted.add(infos.get(idx));
-        }
-        return sorted;
+        Collections.sort(entries, mode.comparator());
+        return toGalleryList(entries);
     }
 
-    private static Comparator<Integer> buildSortComparator(@NonNull SortMode mode,
-            @NonNull List<GalleryInfo> infos, @NonNull List<Long> downloadedAt) {
-        switch (mode) {
-            case POSTED_DATE_DESC:
-                // posted is a string like "2024-01-15 12:34" — string-desc gives newest first.
-                return (a, b) -> {
-                    String pa = infos.get(a).posted, pb = infos.get(b).posted;
-                    if (pa == null) pa = "";
-                    if (pb == null) pb = "";
-                    return pb.compareTo(pa);
-                };
-            case TITLE_ASC:
-                return (a, b) -> {
-                    String ta = titleOf(infos.get(a));
-                    String tb = titleOf(infos.get(b));
-                    return ta.compareToIgnoreCase(tb);
-                };
-            case CATEGORY:
-                return (a, b) -> {
-                    int diff = Integer.compare(infos.get(a).category, infos.get(b).category);
-                    if (diff != 0) return diff;
-                    return titleOf(infos.get(a)).compareToIgnoreCase(titleOf(infos.get(b)));
-                };
-            case DOWNLOAD_DATE_DESC:
-            default:
-                return (a, b) -> Long.compare(downloadedAt.get(b), downloadedAt.get(a));
+    @NonNull
+    private static List<GalleryInfo> toGalleryList(@NonNull List<SmbSortMode.Entry> entries) {
+        List<GalleryInfo> out = new ArrayList<>(entries.size());
+        for (SmbSortMode.Entry e : entries) {
+            out.add(e.info);
         }
-    }
-
-    private static String titleOf(@NonNull GalleryInfo gi) {
-        if (gi.title != null) return gi.title;
-        if (gi.titleJpn != null) return gi.titleJpn;
-        return "";
+        return out;
     }
 
     /**
