@@ -24,7 +24,6 @@ import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.streampipe.InputStreamPipe;
 import com.hippo.streampipe.OutputStreamPipe;
-import com.hippo.lib.yorozuya.FileUtils;
 import com.hippo.lib.yorozuya.IOUtils;
 import com.hippo.unifile.UniFile;
 import com.hippo.util.IoThreadPoolExecutor;
@@ -33,8 +32,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -97,37 +94,11 @@ public final class SmbStorage {
 
     @NonNull
     private static String buildSmbUrl() {
-        String host = Settings.getSmbHost();
-        String port = Settings.getSmbPort();
-        String shareName = Settings.getSmbShareName();
-        String sharePath = Settings.getSmbSharePath();
-
-        StringBuilder url = new StringBuilder("smb://");
-        url.append(host);
-
-        if (!TextUtils.isEmpty(port) && !port.equals("445")) {
-            url.append(":").append(port);
-        }
-
-        // Share names from typical NAS configs may contain spaces or other reserved
-        // characters ("Public Documents", "Family$"). jcifs needs them percent-encoded
-        // in the URL form. URLEncoder yields x-www-form-urlencoded output, so convert
-        // its "+" back to "%20" to stay within the smb-URL grammar.
-        String encodedShare = shareName;
-        if (!TextUtils.isEmpty(shareName)) {
-            try {
-                encodedShare = URLEncoder.encode(shareName, "UTF-8").replace("+", "%20");
-            } catch (UnsupportedEncodingException ignored) {
-                // UTF-8 is guaranteed; fall back to the raw value.
-            }
-        }
-        url.append("/").append(encodedShare).append(sharePath);
-        return url.toString();
-    }
-
-    @NonNull
-    public static String buildGalleryFolderName(@NonNull GalleryInfo info) {
-        return FileUtils.sanitizeFilename(info.gid + "-" + (TextUtils.isEmpty(info.title) ? "gallery" : info.title));
+        return SmbPaths.buildShareUrl(
+                Settings.getSmbHost(),
+                Settings.getSmbPort(),
+                Settings.getSmbShareName(),
+                Settings.getSmbSharePath());
     }
 
     /**
@@ -150,7 +121,7 @@ public final class SmbStorage {
         if (!shareRoot.exists()) {
             shareRoot.mkdirs();
         }
-        SmbFile galleryDir = new SmbFile(shareRoot, buildGalleryFolderName(info) + "/");
+        SmbFile galleryDir = new SmbFile(shareRoot, SmbPaths.buildGalleryFolderName(info) + "/");
         if (!galleryDir.exists()) {
             galleryDir.mkdirs();
         }
@@ -189,7 +160,7 @@ public final class SmbStorage {
             // created — wasteful at best, wrong at worst if the dir never existed).
             CIFSContext cifs = buildContext();
             SmbFile shareRoot = new SmbFile(buildSmbUrl(), cifs);
-            SmbFile galleryDir = new SmbFile(shareRoot, buildGalleryFolderName(info) + "/");
+            SmbFile galleryDir = new SmbFile(shareRoot, SmbPaths.buildGalleryFolderName(info) + "/");
             if (!galleryDir.exists()) {
                 return true;
             }
@@ -610,7 +581,7 @@ public final class SmbStorage {
             shareRoot.mkdirs();
         }
 
-        SmbFile galleryDir = new SmbFile(shareRoot, buildGalleryFolderName(info) + "/");
+        SmbFile galleryDir = new SmbFile(shareRoot, SmbPaths.buildGalleryFolderName(info) + "/");
         if (!galleryDir.exists()) {
             galleryDir.mkdirs();
         }
