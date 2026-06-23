@@ -37,6 +37,7 @@ import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.smb.SmbCoverDataContainer;
+import com.hippo.ehviewer.smb.SmbSortMode;
 import com.hippo.ehviewer.smb.SmbStorage;
 import com.hippo.ehviewer.ui.GalleryActivity;
 import com.hippo.ehviewer.ui.scene.ToolbarScene;
@@ -241,7 +242,7 @@ public class LocalInventoryScene extends ToolbarScene
             return;
         }
         mLoading = true;
-        final SmbStorage.SortMode mode = SmbStorage.SortMode.fromOrdinal(Settings.getLocalInventorySort());
+        final SmbSortMode mode = SmbSortMode.fromOrdinal(Settings.getLocalInventorySort());
         // Snapshot the application context up front. The Runnable below runs on the worker
         // pool and the SimpleHandler.post lambdas run on the main thread; both can fire
         // after onDestroyView has detached the fragment. Calling Fragment.getString from

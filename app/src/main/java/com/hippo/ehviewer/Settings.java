@@ -928,7 +928,7 @@ public class Settings {
     }
 
     /**
-     * Local Inventory sort mode. Values map to {@code SmbStorage.SortMode} ordinals
+     * Local Inventory sort mode. Values map to {@code SmbSortMode} ordinals
      * (0=DOWNLOAD_DATE_DESC, 1=POSTED_DATE_DESC, 2=TITLE_ASC, 3=CATEGORY).
      * Persisted so the user's preferred order is remembered across sessions.
      */
