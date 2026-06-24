@@ -21,17 +21,18 @@ public class LocalSmbPreviewSet extends PreviewSet {
 
     private final long mGid;
     private final String mTitle;
-    private final int mPages;
+    /** Number of previews this set exposes — a bounded slice, not the gallery's full page count. */
+    private final int mCount;
 
-    public LocalSmbPreviewSet(long gid, String title, int pages) {
+    public LocalSmbPreviewSet(long gid, String title, int count) {
         mGid = gid;
         mTitle = title;
-        mPages = Math.max(0, pages);
+        mCount = Math.max(0, count);
     }
 
     @Override
     public int size() {
-        return mPages;
+        return mCount;
     }
 
     @Override
@@ -59,7 +60,7 @@ public class LocalSmbPreviewSet extends PreviewSet {
         // gallery's preview grid asks to render. Conaco's per-cell loads still happen on
         // its serial disk thread, but each one becomes a fast local file read instead of
         // a sequential SMB round-trip.
-        SmbPreviewCache.prefetchGallery(mGid, mTitle, mPages);
+        SmbPreviewCache.prefetchGallery(mGid, mTitle, mCount);
         view.resetClip();
         view.load(previewKey(gid, index), previewUrl(gid, index),
                 new SmbImageDataContainer(mGid, mTitle, index), false, false);
@@ -84,13 +85,13 @@ public class LocalSmbPreviewSet extends PreviewSet {
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeLong(mGid);
         dest.writeString(mTitle);
-        dest.writeInt(mPages);
+        dest.writeInt(mCount);
     }
 
     protected LocalSmbPreviewSet(Parcel in) {
         mGid = in.readLong();
         mTitle = in.readString();
-        mPages = in.readInt();
+        mCount = in.readInt();
     }
 
     public static final Creator<LocalSmbPreviewSet> CREATOR = new Creator<LocalSmbPreviewSet>() {
