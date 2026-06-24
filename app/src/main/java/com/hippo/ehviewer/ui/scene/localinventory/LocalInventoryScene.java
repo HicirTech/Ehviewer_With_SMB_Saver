@@ -37,6 +37,7 @@ import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.smb.SmbCoverDataContainer;
+import com.hippo.ehviewer.smb.SmbMetadata;
 import com.hippo.ehviewer.smb.SmbSortMode;
 import com.hippo.ehviewer.smb.SmbStorage;
 import com.hippo.ehviewer.ui.GalleryActivity;
@@ -343,7 +344,7 @@ public class LocalInventoryScene extends ToolbarScene
         args.putParcelable(GalleryDetailScene.KEY_GALLERY_INFO, gi);
         // Render fully from local SMB metadata. Reconstructs tags from tgList so the
         // detail page does not need a network call.
-        args.putParcelable(GalleryDetailScene.KEY_GALLERY_DETAIL, SmbStorage.buildOfflineDetail(gi));
+        args.putParcelable(GalleryDetailScene.KEY_GALLERY_DETAIL, SmbMetadata.buildOfflineDetail(gi));
         // SMB metadata never carries comments — hide that section entirely.
         args.putBoolean(GalleryDetailScene.KEY_HIDE_COMMENTS, true);
         startScene(new Announcer(GalleryDetailScene.class).setArgs(args));
