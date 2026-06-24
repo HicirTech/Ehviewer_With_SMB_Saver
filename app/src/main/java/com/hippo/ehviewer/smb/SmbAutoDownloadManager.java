@@ -101,7 +101,7 @@ public final class SmbAutoDownloadManager {
                     return;
                 }
                 try {
-                    SmbStorage.writeMetadataSkeleton(galleryInfo);
+                    SmbMetadata.writeMetadataSkeleton(galleryInfo);
                 } catch (Throwable e) {
                     Log.w(TAG, "Failed to write skeleton metadata gid=" + galleryInfo.gid, e);
                 }
