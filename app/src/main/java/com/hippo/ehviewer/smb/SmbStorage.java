@@ -46,7 +46,8 @@ import okhttp3.Response;
 public final class SmbStorage {
 
     private static final String TAG = "SmbStorage";
-    private static final String METADATA_FILE = "metadata.json";
+    // Package-private: SmbMetadata reads/writes the same metadata.json.
+    static final String METADATA_FILE = "metadata.json";
     private static final String SPIDER_INFO_FILE = ".ehviewer";
 
     /**
@@ -111,8 +112,9 @@ public final class SmbStorage {
         return info;
     }
 
+    // Package-private: SmbMetadata resolves the same per-gallery dir for its writes.
     @NonNull
-    private static SmbFile getGalleryDir(@NonNull GalleryInfo info) throws IOException {
+    static SmbFile getGalleryDir(@NonNull GalleryInfo info) throws IOException {
         CIFSContext cifs = buildContext();
         SmbFile shareRoot = new SmbFile(buildSmbUrl(), cifs);
         if (!shareRoot.exists()) {
