@@ -3,6 +3,8 @@
 .DS_Store
 /build
 /src
+# Eclipse JDT / VS Code Java compile output (e.g. daogenerator/bin)
+bin/
 *.iml
 .idea
 /captures
