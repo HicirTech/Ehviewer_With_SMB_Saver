@@ -354,7 +354,7 @@ public class LocalInventoryScene extends ToolbarScene
         // next open is also fully offline.
         Context context = getEHContext();
         if (context != null && (gi.tgList == null || gi.tgList.isEmpty())) {
-            SmbStorage.enrichLocalMetadataIfMissing(context, gi);
+            SmbMetadata.enrichLocalMetadataIfMissing(context, gi);
         }
     }
 

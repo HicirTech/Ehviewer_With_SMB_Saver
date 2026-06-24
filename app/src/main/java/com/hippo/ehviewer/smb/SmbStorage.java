@@ -13,18 +13,13 @@ import com.alibaba.fastjson.JSONObject;
 import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
-import com.hippo.ehviewer.client.EhEngine;
-import com.hippo.ehviewer.client.EhUrl;
-import com.hippo.ehviewer.client.data.GalleryDetail;
 import com.hippo.ehviewer.client.data.GalleryInfo;
-import com.hippo.ehviewer.client.data.GalleryTagGroup;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.streampipe.InputStreamPipe;
 import com.hippo.streampipe.OutputStreamPipe;
 import com.hippo.lib.yorozuya.IOUtils;
 import com.hippo.unifile.UniFile;
-import com.hippo.util.IoThreadPoolExecutor;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -284,21 +279,6 @@ public final class SmbStorage {
             return file.getInputStream();
         } catch (Throwable e) {
             return null;
-        }
-    }
-
-    /**
-     * Writes a minimal metadata.json from the GalleryInfo immediately, so the gallery shows up
-     * in Local Inventory even before/without a finished download. Safe to call repeatedly.
-     */
-    public static boolean writeMetadataSkeleton(@NonNull GalleryInfo info) {
-        try {
-            SmbFile galleryDir = getGalleryDir(info);
-            writeMetadata(galleryDir, info);
-            return true;
-        } catch (Throwable e) {
-            Log.e(TAG, "Failed to write skeleton metadata gid=" + info.gid, e);
-            return false;
         }
     }
 
@@ -586,7 +566,7 @@ public final class SmbStorage {
         }
 
         copyUniDir(localDir, galleryDir);
-        writeMetadataWithDetail(context, galleryDir, info);
+        SmbMetadata.writeMetadataWithDetail(context, galleryDir, info);
         downloadAndWriteCover(context, galleryDir, info);
     }
 
@@ -605,7 +585,7 @@ public final class SmbStorage {
                     resolvedPages = spiderPages;
                 }
             }
-            writeMetadataWithDetail(context, galleryDir, info, resolvedPages);
+            SmbMetadata.writeMetadataWithDetail(context, galleryDir, info, resolvedPages);
             downloadAndWriteCover(context, galleryDir, info);
         } catch (Throwable e) {
             Log.e(TAG, "Failed to finalize SMB gallery gid=" + info.gid, e);
@@ -658,69 +638,6 @@ public final class SmbStorage {
                 }
                 copyStream(in, out);
             }
-        }
-    }
-
-    private static void writeMetadata(@NonNull SmbFile galleryDir, @NonNull GalleryInfo info) throws IOException {
-        SmbFile metadata = new SmbFile(galleryDir, METADATA_FILE);
-        String json = info.toJson().toJSONString();
-        try (OutputStream os = metadata.getOutputStream()) {
-            os.write(json.getBytes(StandardCharsets.UTF_8));
-        }
-    }
-
-    private static void writeMetadataWithDetail(@NonNull Context context, @NonNull SmbFile galleryDir, @NonNull GalleryInfo info) throws IOException {
-        writeMetadataWithDetail(context, galleryDir, info, info.pages);
-    }
-
-    private static void writeMetadataWithDetail(@NonNull Context context, @NonNull SmbFile galleryDir,
-                                                @NonNull GalleryInfo info, int fallbackPages) throws IOException {
-        GalleryInfo enriched = enrichWithGalleryTags(context, info, fallbackPages);
-        writeMetadata(galleryDir, enriched);
-    }
-
-    @NonNull
-    private static GalleryInfo enrichWithGalleryTags(@NonNull Context context, @NonNull GalleryInfo info, int fallbackPages) {
-        try {
-            String detailUrl = EhUrl.getGalleryDetailUrl(info.gid, info.token);
-            GalleryDetail detail = EhEngine.getGalleryDetail(null, EhApplication.getOkHttpClient(context), detailUrl);
-            if (detail == null) {
-                return info;
-            }
-
-            // Supplement any fields the detail page didn't fill from the original info.
-            if (TextUtils.isEmpty(detail.title)) detail.title = info.title;
-            if (TextUtils.isEmpty(detail.titleJpn)) detail.titleJpn = info.titleJpn;
-            if (TextUtils.isEmpty(detail.thumb)) detail.thumb = info.thumb;
-            if (detail.category == 0) detail.category = info.category;
-            if (TextUtils.isEmpty(detail.posted)) detail.posted = info.posted;
-            if (TextUtils.isEmpty(detail.uploader)) detail.uploader = info.uploader;
-            if (detail.pages <= 0) detail.pages = fallbackPages > 0 ? fallbackPages : info.pages;
-            if (TextUtils.isEmpty(detail.simpleLanguage)) detail.simpleLanguage = info.simpleLanguage;
-
-            if (detail.tags != null) {
-                List<String> allTags = new ArrayList<>();
-                for (GalleryTagGroup group : detail.tags) {
-                    if (group == null || TextUtils.isEmpty(group.groupName)) {
-                        continue;
-                    }
-                    for (int i = 0; i < group.size(); i++) {
-                        String tag = group.getTagAt(i);
-                        if (!TextUtils.isEmpty(tag)) {
-                            allTags.add(group.groupName + ":" + tag);
-                        }
-                    }
-                }
-                if (!allTags.isEmpty()) {
-                    detail.simpleTags = allTags.toArray(new String[0]);
-                    detail.tgList = new ArrayList<>(allTags);
-                    detail.generateSLang();
-                }
-            }
-            return detail;
-        } catch (Throwable e) {
-            Log.w(TAG, "Failed to enrich tags from gallery detail gid=" + info.gid, e);
-            return info;
         }
     }
 
@@ -830,32 +747,6 @@ public final class SmbStorage {
             out.add(e.info);
         }
         return out;
-    }
-
-    /**
-     * If the locally-stored info lacks tags, fetch the gallery detail in the background and
-     * rewrite metadata.json so subsequent opens are fully offline. No-op if tags are already
-     * present or SMB is not configured.
-     */
-    public static void enrichLocalMetadataIfMissing(@NonNull Context context, @NonNull GalleryInfo info) {
-        if (info.tgList != null && !info.tgList.isEmpty()) {
-            return;
-        }
-        if (!isConfigured()) {
-            return;
-        }
-        final Context appContext = context.getApplicationContext();
-        IoThreadPoolExecutor.Companion.getInstance().execute(() -> {
-            try {
-                SmbFile galleryDir = getGalleryDir(info);
-                if (!galleryDir.exists()) {
-                    return;
-                }
-                writeMetadataWithDetail(appContext, galleryDir, info);
-            } catch (Throwable e) {
-                Log.w(TAG, "Failed to enrich local metadata gid=" + info.gid, e);
-            }
-        });
     }
 
     private static String readAll(InputStream is) throws IOException {
