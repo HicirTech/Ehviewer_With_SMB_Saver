@@ -31,7 +31,7 @@ import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.gallery.GalleryProvider2;
-import com.hippo.ehviewer.smb.SmbStorage;
+import com.hippo.ehviewer.smb.SmbSpiderStorage;
 import com.hippo.io.UniFileInputStreamPipe;
 import com.hippo.io.UniFileOutputStreamPipe;
 import com.hippo.streampipe.InputStreamPipe;
@@ -167,8 +167,9 @@ public final class SpiderDen {
         if (mMode != SpiderQueen.MODE_DOWNLOAD) {
             return true;
         }
-        if (useSmbStorage()) {
-            return SmbStorage.prepareGalleryDir(mGalleryInfo);
+        GallerySpiderStorage remote = remoteStorage();
+        if (remote != null) {
+            return remote.prepareDir();
         }
         synchronized (mDownloadDirLock) {
             if (mDownloadDir == null) {
@@ -191,7 +192,7 @@ public final class SpiderDen {
             case SpiderQueen.MODE_READ:
                 return sCache != null;
             case SpiderQueen.MODE_DOWNLOAD:
-                if (useSmbStorage()) {
+                if (remoteStorage() != null) {
                     return true;
                 }
                 synchronized (mDownloadDirLock) {
@@ -202,11 +203,18 @@ public final class SpiderDen {
         }
     }
 
-    private boolean useSmbStorage() {
-        // Per-gid intent mark. Regular DownloadManager downloads are NOT marked, so they
-        // write to phone storage exactly as before. Only SmbDirectDownloader (writes) and
-        // LocalInventoryScene reader launches (reads) mark the gid as SMB-targeted.
-        return SmbStorage.isGidMarkedSmbTarget(mGid);
+    /**
+     * The remote storage backend for this gallery, or null to use phone storage.
+     *
+     * <p>Single extension point replacing the old per-method {@code useSmbStorage()} checks:
+     * regular DownloadManager downloads are unmarked and resolve to null here (so they write to
+     * phone storage exactly as before), while galleries marked for SMB — by SmbDirectDownloader
+     * for writes, or LocalInventoryScene reader launches for reads — resolve to an SMB backend.
+     * A future protocol would be selected here without touching the call sites below.
+     */
+    @Nullable
+    private GallerySpiderStorage remoteStorage() {
+        return SmbSpiderStorage.createIfTarget(mGalleryInfo, mGid);
     }
 
     /**
@@ -216,8 +224,9 @@ public final class SpiderDen {
      */
     @Nullable
     public OutputStream openSpiderInfoOutputStream(String filename) {
-        if (useSmbStorage()) {
-            return SmbStorage.openSpiderInfoOutputStream(mGalleryInfo);
+        GallerySpiderStorage remote = remoteStorage();
+        if (remote != null) {
+            return remote.openSpiderInfoOutputStream();
         }
         UniFile dir = getDownloadDir();
         if (dir == null) {
@@ -240,8 +249,9 @@ public final class SpiderDen {
      */
     @Nullable
     public InputStream openSpiderInfoInputStream(String filename) {
-        if (useSmbStorage()) {
-            return SmbStorage.openSpiderInfoInputStream(mGalleryInfo);
+        GallerySpiderStorage remote = remoteStorage();
+        if (remote != null) {
+            return remote.openSpiderInfoInputStream();
         }
         UniFile dir = getDownloadDir();
         if (dir == null) {
@@ -260,7 +270,7 @@ public final class SpiderDen {
 
     @Nullable
     public UniFile getDownloadDir() {
-        if (useSmbStorage()) {
+        if (remoteStorage() != null) {
             return null;
         }
         UniFile dir;
@@ -272,7 +282,7 @@ public final class SpiderDen {
 
     @Nullable
     public UniFile getDownloadDirName() {
-        if (useSmbStorage()) {
+        if (remoteStorage() != null) {
             return null;
         }
         synchronized (mDownloadDirLock) {
@@ -309,8 +319,9 @@ public final class SpiderDen {
     }
 
     private boolean containInDownloadDir(int index) {
-        if (useSmbStorage()) {
-            return SmbStorage.containImage(mGalleryInfo, index);
+        GallerySpiderStorage remote = remoteStorage();
+        if (remote != null) {
+            return remote.containImage(index);
         }
         UniFile dir = getDownloadDir();
         if (dir == null) {
@@ -401,8 +412,9 @@ public final class SpiderDen {
     }
 
     private boolean removeFromDownloadDir(int index) {
-        if (useSmbStorage()) {
-            return SmbStorage.removeImage(mGalleryInfo, index);
+        GallerySpiderStorage remote = remoteStorage();
+        if (remote != null) {
+            return remote.removeImage(index);
         }
         UniFile dir = getDownloadDir();
         if (dir == null) {
@@ -441,8 +453,9 @@ public final class SpiderDen {
      */
     @Nullable
     private OutputStreamPipe openDownloadOutputStreamPipe(int index, @Nullable String extension) {
-        if (useSmbStorage()) {
-            return SmbStorage.openSmbOutputStreamPipe(mGalleryInfo, index, extension);
+        GallerySpiderStorage remote = remoteStorage();
+        if (remote != null) {
+            return remote.openImageOutputStreamPipe(index, extension);
         }
         UniFile dir = getDownloadDir();
         if (dir == null) {
@@ -468,7 +481,7 @@ public final class SpiderDen {
             // In MODE_READ we must not write to the persistent SMB share: SmbDirectDownloader
             // (running in MODE_DOWNLOAD on the same queen) owns SMB persistence end-to-end.
             // Otherwise every viewed page would also kick off an SMB write, wasting bandwidth.
-            if (useSmbStorage()) {
+            if (remoteStorage() != null) {
                 return openCacheOutputStreamPipe(index);
             }
             // Non-SMB mode: behave as before — prefer the local download dir, fall back to cache.
@@ -497,8 +510,9 @@ public final class SpiderDen {
 
     @Nullable
     public InputStreamPipe openDownloadInputStreamPipe(int index) {
-        if (useSmbStorage()) {
-            return SmbStorage.openSmbInputStreamPipe(mGalleryInfo, index);
+        GallerySpiderStorage remote = remoteStorage();
+        if (remote != null) {
+            return remote.openImageInputStreamPipe(index);
         }
         UniFile dir = getDownloadDir();
         if (dir == null) {
