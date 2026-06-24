@@ -44,7 +44,7 @@ public final class SmbMetadata {
      * scene and blowing up memory on open. The remaining pages stay reachable through the reader
      * (tapping a preview). Browsing every preview offline is a separate follow-up.
      */
-    private static final int DETAIL_PREVIEW_LIMIT = 40;
+    private static final int DETAIL_PREVIEW_LIMIT = 20;
 
     private SmbMetadata() {}
 
