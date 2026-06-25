@@ -14,10 +14,15 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -64,6 +69,12 @@ public final class SmbPreviewCache {
     private static final Set<Long> PREFETCHED_GIDS =
             Collections.synchronizedSet(new HashSet<>());
 
+    /**
+     * Outstanding prefetch tasks per gid (the dispatch task + one per page), so a gallery's
+     * prefetch can be cancelled when its detail scene goes away. Guarded by its own monitor.
+     */
+    private static final Map<Long, List<Future<?>>> IN_FLIGHT = new HashMap<>();
+
     /** Lazily resolved and memoised cache directory so we don't re-stat it per call. */
     private static volatile File sCacheDir;
 
@@ -104,41 +115,65 @@ public final class SmbPreviewCache {
     }
 
     /**
-     * Kicks off a parallel SMB → local prefetch for every page of the gallery, exactly
-     * once per process lifetime. Safe to call from any thread; returns immediately.
+     * Kicks off a parallel SMB → local prefetch for {@code count} previews of the gallery, exactly
+     * once per process lifetime (until {@link #cancelGallery}). Safe to call from any thread;
+     * returns immediately.
      *
      * <p>The fan-out loop itself runs on the prefetch pool rather than the caller's thread:
-     * for big galleries (200+ pages) allocating N lambdas + N {@code LinkedBlockingQueue.put}
-     * calls inline took long enough to cause a visible one-frame stutter when the preview
-     * grid first bound on the UI thread.
+     * for big galleries allocating N lambdas + N {@code LinkedBlockingQueue.put} calls inline
+     * took long enough to cause a visible one-frame stutter when the preview grid first bound
+     * on the UI thread.
      */
-    public static void prefetchGallery(long gid, @Nullable String title, int pages) {
-        if (pages <= 0 || !SmbStorage.isConfigured()) {
+    public static void prefetchGallery(long gid, @Nullable String title, int count) {
+        if (count <= 0 || !SmbStorage.isConfigured()) {
             return;
         }
         if (!PREFETCHED_GIDS.add(gid)) {
             return;
         }
         final GalleryInfo lookup = SmbStorage.lookupKey(gid, title);
-        // One short-lived dispatch task; pages-many per-page tasks are queued from inside it.
-        PREFETCH_EXECUTOR.execute(() -> dispatchPages(lookup, gid, pages));
+        // One short-lived dispatch task; count-many per-page tasks are queued from inside it.
+        track(gid, PREFETCH_EXECUTOR.submit(() -> dispatchPages(lookup, gid, count)));
     }
 
-    private static void dispatchPages(@NonNull GalleryInfo lookup, long gid, int pages) {
-        final AtomicInteger remaining = new AtomicInteger(pages);
-        for (int i = 0; i < pages; i++) {
+    private static void dispatchPages(@NonNull GalleryInfo lookup, long gid, int count) {
+        final AtomicInteger remaining = new AtomicInteger(count);
+        for (int i = 0; i < count; i++) {
+            // Stop queuing more work if this gallery was cancelled while we were dispatching
+            // (cancelGallery interrupts the dispatch task and drops the gid from PREFETCHED_GIDS).
+            if (Thread.currentThread().isInterrupted() || !PREFETCHED_GIDS.contains(gid)) {
+                break;
+            }
             final int index = i;
-            PREFETCH_EXECUTOR.execute(() -> {
+            track(gid, PREFETCH_EXECUTOR.submit(() -> {
+                // A queued task may run after the gallery was cancelled; bail cheaply.
+                if (!PREFETCHED_GIDS.contains(gid)) {
+                    return;
+                }
                 try {
                     fetchOne(lookup, index);
                 } catch (Throwable e) {
                     Log.w(TAG, "prefetch failed gid=" + gid + " index=" + index, e);
                 } finally {
                     if (remaining.decrementAndGet() == 0) {
-                        Log.i(TAG, "prefetch complete gid=" + gid + " pages=" + pages);
+                        synchronized (IN_FLIGHT) {
+                            IN_FLIGHT.remove(gid);
+                        }
+                        Log.i(TAG, "prefetch complete gid=" + gid + " count=" + count);
                     }
                 }
-            });
+            }));
+        }
+    }
+
+    private static void track(long gid, @NonNull Future<?> future) {
+        synchronized (IN_FLIGHT) {
+            List<Future<?>> list = IN_FLIGHT.get(gid);
+            if (list == null) {
+                list = new ArrayList<>();
+                IN_FLIGHT.put(gid, list);
+            }
+            list.add(future);
         }
     }
 
@@ -179,9 +214,23 @@ public final class SmbPreviewCache {
         }
     }
 
-    /** For test / cache-clear surfaces. */
-    @SuppressWarnings("unused")
-    public static void invalidateGallery(long gid) {
+    /**
+     * Stop prefetching a gallery and forget that we started: cancels every outstanding dispatch /
+     * per-page task and clears the dedup mark so a later visit re-prefetches. Called when the
+     * gallery's detail scene goes away, so leaving the page doesn't leave the shared prefetch pool
+     * busy reading previews nobody is looking at anymore. Already-finished tasks are simply no-ops.
+     */
+    public static void cancelGallery(long gid) {
+        // Drop the mark first so any task that slips past cancellation bails at its guard.
         PREFETCHED_GIDS.remove(gid);
+        List<Future<?>> list;
+        synchronized (IN_FLIGHT) {
+            list = IN_FLIGHT.remove(gid);
+        }
+        if (list != null) {
+            for (Future<?> f : list) {
+                f.cancel(true);
+            }
+        }
     }
 }

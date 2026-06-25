@@ -104,6 +104,7 @@ import com.hippo.ehviewer.ui.scene.gallery.list.GalleryListScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.GalleryListSceneDialog;
 import com.hippo.ehviewer.ui.scene.history.HistoryScene;
 import com.hippo.ehviewer.smb.SmbAutoDownloadManager;
+import com.hippo.ehviewer.smb.SmbPreviewCache;
 import com.hippo.ehviewer.smb.SmbStorage;
 import com.hippo.ehviewer.util.ClipboardUtil;
 import com.hippo.ehviewer.widget.ArchiverDownloadProgress;
@@ -705,6 +706,13 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+
+        // Stop any SMB preview prefetch for this gallery: once the detail page is gone there's
+        // nobody to show those previews to, and leftover reads would hog the shared prefetch pool
+        // and block whatever the user opens next. No-op for non-SMB galleries.
+        if (mGalleryInfo != null) {
+            SmbPreviewCache.cancelGallery(mGalleryInfo.gid);
+        }
 
         Context context = getEHContext();
         AssertUtils.assertNotNull(context);

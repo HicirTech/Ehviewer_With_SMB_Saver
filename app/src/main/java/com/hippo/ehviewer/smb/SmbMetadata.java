@@ -38,6 +38,14 @@ public final class SmbMetadata {
 
     private static final String TAG = "SmbMetadata";
 
+    /**
+     * How many previews to render in the offline detail page. Capped on purpose: a large gallery
+     * would otherwise put one grid cell — and one SMB prefetch — per page, freezing the detail
+     * scene and blowing up memory on open. The remaining pages stay reachable through the reader
+     * (tapping a preview). Browsing every preview offline is a separate follow-up.
+     */
+    private static final int DETAIL_PREVIEW_LIMIT = 20;
+
     private SmbMetadata() {}
 
     /**
@@ -79,13 +87,15 @@ public final class SmbMetadata {
             gd.comments = new GalleryCommentList(new GalleryComment[0], false);
         }
         if (gd.previewSet == null || gd.previewSet.size() == 0) {
-            // IMPORTANT: do NOT pass `gd` itself — that would create a cycle
-            // (gd.previewSet -> us -> gd) which crashes when parcelled.
-            gd.previewSet = new LocalSmbPreviewSet(gd.gid, gd.title, gd.pages);
+            // Bounded first slice of previews — not one cell per gallery page. IMPORTANT: do NOT
+            // pass `gd` itself — that would create a cycle (gd.previewSet -> us -> gd) which
+            // crashes when parcelled.
+            int previewCount = Math.min(gd.pages, DETAIL_PREVIEW_LIMIT);
+            gd.previewSet = new LocalSmbPreviewSet(gd.gid, gd.title, previewCount);
         }
-        // Tell bindPreviews there's something to render. Set to 1 so the grid renders
-        // the single page of previews and the "more previews" hint stays as
-        // R.string.no_more_previews.
+        // Tell bindPreviews there's something to render. Set to 1 so the grid renders the single
+        // (capped) page of previews and the "more previews" hint stays as R.string.no_more_previews
+        // — the rest of the pages are viewed through the reader.
         gd.previewPages = gd.pages > 0 ? 1 : 0;
         if (gd.language == null) {
             gd.language = gd.simpleLanguage != null ? gd.simpleLanguage : "";
