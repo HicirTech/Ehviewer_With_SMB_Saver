@@ -187,7 +187,13 @@ dependencies {
 
 
     testImplementation 'junit:junit:4.13.2'
-    testImplementation 'org.robolectric:robolectric:4.2.1'
+    // 4.2.1 (2019) can't pick an SDK for targetSdk 30 and breaks on JDK 21's module system;
+    // 4.14.x runs on JDK 21 and supports current Android SDKs, reviving the unit-test suite.
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    // Robolectric installs Conscrypt as the JSSE provider during application setup. The app ships
+    // conscrypt-android (native lib "conscrypt_jni", which doesn't exist on a desktop JVM); the uber
+    // jar bundles the desktop native ("conscrypt_openjdk_jni") so that init succeeds under JVM tests.
+    testImplementation 'org.conscrypt:conscrypt-openjdk-uber:2.5.2'
     testImplementation 'org.jooq:joor:0.9.6'
 
     // https://mvnrepository.com/artifact/androidx.webkit/webkit
