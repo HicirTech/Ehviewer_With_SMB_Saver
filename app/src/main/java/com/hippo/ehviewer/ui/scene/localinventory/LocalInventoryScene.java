@@ -20,6 +20,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.RecyclerView;
@@ -38,6 +39,7 @@ import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.smb.SmbCoverDataContainer;
 import com.hippo.ehviewer.smb.SmbMetadata;
+import com.hippo.ehviewer.smb.SmbPaths;
 import com.hippo.ehviewer.smb.SmbSortMode;
 import com.hippo.ehviewer.smb.SmbStorage;
 import com.hippo.ehviewer.ui.GalleryActivity;
@@ -54,8 +56,15 @@ import com.hippo.widget.LoadImageView;
 import com.hippo.widget.recyclerview.AutoStaggeredGridLayoutManager;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -77,13 +86,26 @@ public class LocalInventoryScene extends ToolbarScene
     @Nullable
     private TextView mTip;
 
-    private final List<GalleryInfo> mList = new ArrayList<>();
+    // The gallery folders on the share, in display order. For the default date sort these are
+    // listed cheaply (folder name + mtime) and each folder's metadata.json is read lazily as its row
+    // scrolls into view; for sorts that need metadata to order, every folder is read up front.
+    private final List<SmbStorage.GalleryRef> mRefs = new ArrayList<>();
+    // folderName -> loaded metadata, populated lazily on bind. A concurrent map keeps it safe if a
+    // late row-load post lands during teardown; otherwise it's only touched on the main thread.
+    private final Map<String, GalleryInfo> mInfoCache = new ConcurrentHashMap<>();
+    // Folder names with an in-flight metadata read, so a row bound repeatedly while its read is
+    // outstanding doesn't enqueue duplicate SMB reads.
+    private final Set<String> mLoadingRefs = Collections.synchronizedSet(new HashSet<>());
     private volatile boolean mLoading;
     // First visible adapter position, captured when the view is torn down (e.g. on the way into a
     // gallery detail) so it can be restored when the scene comes back, instead of snapping to the top.
     private int mSavedFirstVisible = 0;
     @Nullable
     private ExecutorService mExecutor;
+    // Bounded pool for the lazy per-row metadata reads, so scrolling a big share reads a few folders
+    // at a time instead of flooding the share or starving the shared app pool.
+    @Nullable
+    private ExecutorService mRowExecutor;
 
     @Override
     public int getNavCheckedItem() {
@@ -96,6 +118,20 @@ public class LocalInventoryScene extends ToolbarScene
         Context context = getEHContext();
         if (context != null) {
             mExecutor = EhApplication.getExecutorService(context);
+        }
+        mRowExecutor = Executors.newFixedThreadPool(4, r -> {
+            Thread t = new Thread(r, "smb-inventory-row");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (mRowExecutor != null) {
+            mRowExecutor.shutdownNow();
+            mRowExecutor = null;
         }
     }
 
@@ -157,11 +193,11 @@ public class LocalInventoryScene extends ToolbarScene
                         ViewUtils.$$(view, R.id.sort_fab);
         sortFab.setOnClickListener(v -> showSortDialog());
 
-        if (!mList.isEmpty()) {
+        if (!mRefs.isEmpty()) {
             // The scene fragment survived (e.g. we're coming back from a gallery detail) and still
-            // holds a loaded inventory. Reuse it and restore the previous scroll position rather than
-            // re-scanning the whole share and jumping back to the top — matches how the normal
-            // gallery list keeps its place on return.
+            // holds a listed inventory (plus whatever metadata was already read). Reuse it and restore
+            // the previous scroll position rather than re-scanning the whole share and jumping back to
+            // the top — matches how the normal gallery list keeps its place on return.
             mAdapter.notifyDataSetChanged();
             if (mViewTransition != null) {
                 mViewTransition.showView(0, false);
@@ -285,21 +321,23 @@ public class LocalInventoryScene extends ToolbarScene
                 ? ctxSnapshot.getApplicationContext()
                 : EhApplication.getInstance();
         Runnable task = () -> {
-            final List<GalleryInfo> loaded;
+            final OrderedRefs result;
             try {
                 // Issue #2644 requires a 7s timeout — if the share can't be reached by then,
                 // surface the sad-pandroid error state instead of hanging the scene indefinitely.
                 // We can't bound jcifs's internal socket timeouts without rebuilding the global
-                // SingletonContext, so we wrap the actual load in a Future with a hard cap.
+                // SingletonContext, so we wrap the actual load in a Future with a hard cap. For the
+                // default date sort the wrapped work is just one cheap share listing; other sorts
+                // still read every folder here because they can't be ordered without the metadata.
                 java.util.concurrent.ExecutorService pool =
                         java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
                             Thread t = new Thread(r, "smb-inventory-load");
                             t.setDaemon(true);
                             return t;
                         });
-                Future<List<GalleryInfo>> fut = pool.submit(() -> SmbStorage.loadInventory(mode));
+                Future<OrderedRefs> fut = pool.submit(() -> loadOrderedRefs(mode));
                 try {
-                    loaded = fut.get(7, TimeUnit.SECONDS);
+                    result = fut.get(7, TimeUnit.SECONDS);
                 } catch (TimeoutException te) {
                     fut.cancel(true);
                     throw new java.io.IOException(appContext.getString(R.string.local_inventory_timeout));
@@ -320,21 +358,26 @@ public class LocalInventoryScene extends ToolbarScene
             }
             SimpleHandler.getInstance().post(() -> {
                 mLoading = false;
-                mList.clear();
-                if (loaded != null) {
-                    mList.addAll(loaded);
-                    // Pre-mark every SMB-saved gid so any read path (cover load, detail
-                    // navigation, reader launch) routes through SmbStorage rather than
-                    // looking on phone storage.
-                    for (GalleryInfo gi : loaded) {
-                        SmbStorage.markGidAsSmbTarget(gi.gid);
+                mRefs.clear();
+                mInfoCache.clear();
+                mLoadingRefs.clear();
+                if (result != null) {
+                    mRefs.addAll(result.refs);
+                    if (result.infos != null) {
+                        // A metadata-ordered sort already read every folder; cache it so rows bind
+                        // without a second read, and pre-mark each gid so any read path (cover load,
+                        // detail navigation, reader launch) routes through SmbStorage.
+                        mInfoCache.putAll(result.infos);
+                        for (GalleryInfo gi : result.infos.values()) {
+                            SmbStorage.markGidAsSmbTarget(gi.gid);
+                        }
                     }
                 }
                 if (mAdapter != null) {
                     mAdapter.notifyDataSetChanged();
                 }
                 if (mViewTransition != null) {
-                    if (mList.isEmpty()) {
+                    if (mRefs.isEmpty()) {
                         if (mTip != null) {
                             if (!SmbStorage.isConfigured() || !Settings.getSmbSaveEnabled()) {
                                 mTip.setText(R.string.local_inventory_disabled);
@@ -356,12 +399,101 @@ public class LocalInventoryScene extends ToolbarScene
         }
     }
 
+    /** Ordered gallery folders, plus their metadata when the sort required reading it all. */
+    private static final class OrderedRefs {
+        @NonNull final List<SmbStorage.GalleryRef> refs;
+        // null => the order needed no metadata (date sort); rows read it lazily on bind.
+        @Nullable final Map<String, GalleryInfo> infos;
+
+        OrderedRefs(@NonNull List<SmbStorage.GalleryRef> refs, @Nullable Map<String, GalleryInfo> infos) {
+            this.refs = refs;
+            this.infos = infos;
+        }
+    }
+
+    /**
+     * Produces the display-ordered folder list. The default "recently downloaded" order keys off the
+     * folder mtime that the share listing already carries, so it reads no metadata — rows fetch it
+     * lazily as they scroll in. Every other sort needs fields that only live inside
+     * {@code metadata.json}, so those read every folder up front (via {@link SmbStorage#loadInventory})
+     * and hand back a fully-populated cache.
+     */
+    @NonNull
+    private static OrderedRefs loadOrderedRefs(@NonNull SmbSortMode mode) {
+        if (mode == SmbSortMode.DOWNLOAD_DATE_DESC) {
+            List<SmbStorage.GalleryRef> refs = SmbStorage.listGalleryRefs();
+            Collections.sort(refs, (a, b) -> Long.compare(b.folderMtime, a.folderMtime));
+            return new OrderedRefs(refs, null);
+        }
+        List<GalleryInfo> loaded = SmbStorage.loadInventory(mode);
+        List<SmbStorage.GalleryRef> refs = new ArrayList<>(loaded.size());
+        Map<String, GalleryInfo> infos = new HashMap<>();
+        for (GalleryInfo gi : loaded) {
+            String folderName = SmbPaths.buildGalleryFolderName(gi);
+            refs.add(new SmbStorage.GalleryRef(folderName, 0L));
+            infos.put(folderName, gi);
+        }
+        return new OrderedRefs(refs, infos);
+    }
+
+    /**
+     * Reads one folder's metadata off the main thread (lazy date-sort path) and, when it lands,
+     * caches it and refreshes that row. De-duplicates concurrent binds of the same folder.
+     */
+    private void enqueueRowLoad(@NonNull SmbStorage.GalleryRef ref) {
+        final String folderName = ref.folderName;
+        if (!mLoadingRefs.add(folderName)) {
+            return; // already being read
+        }
+        ExecutorService pool = mRowExecutor;
+        if (pool == null || pool.isShutdown()) {
+            mLoadingRefs.remove(folderName);
+            return;
+        }
+        pool.execute(() -> {
+            final GalleryInfo info = SmbStorage.readGalleryInfo(ref);
+            SimpleHandler.getInstance().post(() -> {
+                mLoadingRefs.remove(folderName);
+                if (info != null) {
+                    mInfoCache.put(folderName, info);
+                    SmbStorage.markGidAsSmbTarget(info.gid);
+                    if (mAdapter != null) {
+                        int pos = mRefs.indexOf(ref);
+                        if (pos >= 0) {
+                            mAdapter.notifyItemChanged(pos);
+                        }
+                    }
+                } else {
+                    // Not a readable gallery folder (no/unparseable metadata.json) — drop the row so
+                    // it doesn't leave a blank cell. Mirrors loadInventory, which skips such folders.
+                    int pos = mRefs.indexOf(ref);
+                    if (pos >= 0) {
+                        mRefs.remove(pos);
+                        if (mAdapter != null) {
+                            mAdapter.notifyItemRemoved(pos);
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    /** Loaded metadata for a row, or null when it isn't read yet. */
+    @Nullable
+    private GalleryInfo infoAt(int position) {
+        if (position < 0 || position >= mRefs.size()) {
+            return null;
+        }
+        return mInfoCache.get(mRefs.get(position).folderName);
+    }
+
     @Override
     public boolean onItemClick(EasyRecyclerView parent, View view, int position, long id) {
-        if (position < 0 || position >= mList.size()) {
+        GalleryInfo gi = infoAt(position);
+        if (gi == null) {
+            // Row still loading its metadata (or broken) — nothing to open yet.
             return false;
         }
-        GalleryInfo gi = mList.get(position);
         openDetail(gi);
         return true;
     }
@@ -433,8 +565,11 @@ public class LocalInventoryScene extends ToolbarScene
     private final class InventoryAdapter extends RecyclerView.Adapter<InventoryHolder> {
         @Override
         public long getItemId(int position) {
-            if (position < 0 || position >= mList.size()) return RecyclerView.NO_ID;
-            return mList.get(position).gid;
+            if (position < 0 || position >= mRefs.size()) return RecyclerView.NO_ID;
+            // Key off the folder name, not the gid: the gid isn't known until the row's metadata is
+            // read, and a stable id that survives the placeholder -> loaded transition lets
+            // notifyItemChanged refresh the row in place instead of animating a remove/add.
+            return mRefs.get(position).folderName.hashCode();
         }
 
         @Override
@@ -445,37 +580,64 @@ public class LocalInventoryScene extends ToolbarScene
 
         @Override
         public void onBindViewHolder(InventoryHolder holder, int position) {
-            GalleryInfo gi = mList.get(position);
-            // Route the cover load through SmbCoverDataContainer so Conaco reads cover.<ext>
-            // straight from the SMB share (saved alongside the gallery at download time)
-            // instead of hitting e-hentai for the thumbnail URL. useNetwork=false makes the
-            // load offline-only — if the on-share cover is missing the cell just stays empty
-            // rather than silently leaking out to the network.
-            holder.thumb.load(EhCacheKeyFactory.getThumbKey(gi.gid),
-                    gi.thumb != null ? gi.thumb : ("smb-cover://" + gi.gid),
-                    new SmbCoverDataContainer(gi.gid, gi.title), false, false);
-            // Tap the thumbnail to jump straight into the reader (offline-friendly path).
-            // Tapping anywhere else on the card opens the gallery detail page (handled by the
-            // RecyclerView's OnItemClickListener).
-            holder.thumb.setOnClickListener(v -> openReader(gi));
-            holder.title.setText(EhUtils.getSuitableTitle(gi));
-            holder.uploader.setText(gi.uploader);
-            holder.rating.setRating(gi.rating);
-            String catText = EhUtils.getCategory(gi.category);
-            holder.category.setText(catText);
-            holder.category.setBackgroundColor(EhUtils.getCategoryColor(gi.category));
-            holder.posted.setText(gi.posted);
-            holder.simpleLanguage.setText(gi.simpleLanguage);
-            if (gi.pages > 0) {
-                holder.pages.setText(getResources().getQuantityString(R.plurals.page_count, gi.pages, gi.pages));
+            SmbStorage.GalleryRef ref = mRefs.get(position);
+            GalleryInfo gi = mInfoCache.get(ref.folderName);
+            if (gi != null) {
+                bindInfo(holder, gi);
             } else {
-                holder.pages.setText(null);
+                // Not read yet: show a blank cell and kick off the lazy read; the row refreshes
+                // itself (or drops out) when the metadata lands.
+                bindPlaceholder(holder);
+                enqueueRowLoad(ref);
             }
         }
 
         @Override
         public int getItemCount() {
-            return mList.size();
+            return mRefs.size();
         }
+    }
+
+    private void bindInfo(@NonNull InventoryHolder holder, @NonNull GalleryInfo gi) {
+        // Route the cover load through SmbCoverDataContainer so Conaco reads cover.<ext>
+        // straight from the SMB share (saved alongside the gallery at download time)
+        // instead of hitting e-hentai for the thumbnail URL. useNetwork=false makes the
+        // load offline-only — if the on-share cover is missing the cell just stays empty
+        // rather than silently leaking out to the network.
+        holder.thumb.load(EhCacheKeyFactory.getThumbKey(gi.gid),
+                gi.thumb != null ? gi.thumb : ("smb-cover://" + gi.gid),
+                new SmbCoverDataContainer(gi.gid, gi.title), false, false);
+        // Tap the thumbnail to jump straight into the reader (offline-friendly path).
+        // Tapping anywhere else on the card opens the gallery detail page (handled by the
+        // RecyclerView's OnItemClickListener).
+        holder.thumb.setOnClickListener(v -> openReader(gi));
+        holder.title.setText(EhUtils.getSuitableTitle(gi));
+        holder.uploader.setText(gi.uploader);
+        holder.rating.setRating(gi.rating);
+        String catText = EhUtils.getCategory(gi.category);
+        holder.category.setText(catText);
+        holder.category.setBackgroundColor(EhUtils.getCategoryColor(gi.category));
+        holder.posted.setText(gi.posted);
+        holder.simpleLanguage.setText(gi.simpleLanguage);
+        if (gi.pages > 0) {
+            holder.pages.setText(getResources().getQuantityString(R.plurals.page_count, gi.pages, gi.pages));
+        } else {
+            holder.pages.setText(null);
+        }
+    }
+
+    private void bindPlaceholder(@NonNull InventoryHolder holder) {
+        // Clear every field a recycled holder might still be showing so a not-yet-loaded row doesn't
+        // flash the previous gallery's cover/title.
+        holder.thumb.unload();
+        holder.thumb.setOnClickListener(null);
+        holder.title.setText(null);
+        holder.uploader.setText(null);
+        holder.rating.setRating(0f);
+        holder.category.setText(null);
+        holder.category.setBackgroundColor(Color.TRANSPARENT);
+        holder.posted.setText(null);
+        holder.simpleLanguage.setText(null);
+        holder.pages.setText(null);
     }
 }
