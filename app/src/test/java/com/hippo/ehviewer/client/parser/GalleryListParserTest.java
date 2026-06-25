@@ -22,7 +22,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
-import edu.emory.mathcs.backport.java.util.Arrays;
+import java.util.Arrays;
 import java.io.InputStream;
 import java.util.List;
 import okio.BufferedSource;
