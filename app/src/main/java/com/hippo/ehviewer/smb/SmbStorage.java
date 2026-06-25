@@ -1,6 +1,7 @@
 package com.hippo.ehviewer.smb;
 
 import android.content.Context;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
@@ -28,7 +29,11 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import jcifs.CIFSContext;
 import jcifs.context.SingletonContext;
@@ -122,9 +127,71 @@ public final class SmbStorage {
         return galleryDir;
     }
 
+    /**
+     * Resolves the per-gallery SmbFile reference WITHOUT touching the share (no {@code exists()},
+     * no {@code mkdirs()}). {@link #getGalleryDir} did two existence round-trips (plus a possible
+     * mkdirs) on every call, which is pure waste on the read path where the folder already exists —
+     * and that cost was paid once per page, per existence probe. Read-only callers use this.
+     */
+    @NonNull
+    private static SmbFile resolveGalleryDir(@NonNull GalleryInfo info) throws IOException {
+        CIFSContext cifs = buildContext();
+        SmbFile shareRoot = new SmbFile(buildSmbUrl(), cifs);
+        return new SmbFile(shareRoot, SmbPaths.buildGalleryFolderName(info) + "/");
+    }
+
+    /**
+     * Short-lived per-gid snapshot of the gallery folder's file names. {@link #containImage} and
+     * {@link #findSmbImageFile} answer "is page N saved?" from this in-memory set instead of doing
+     * a {@code getGalleryDir()} + one {@code exists()} per supported extension — i.e. ~7 SMB
+     * round-trips — on every single page. That per-page cost is what made opening / scanning a big
+     * gallery crawl. One {@code list()} now serves every page check until the TTL lapses or a
+     * structural change ({@link #prepareGalleryDir}, {@link #removeImage},
+     * {@link #deleteGalleryFolder}, {@link #finalizeDownloadedGallery}) invalidates it.
+     */
+    private static final long LISTING_CACHE_TTL_MS = 5000L;
+
+    private static final class DirListing {
+        final long fetchedAt;
+        @NonNull final Set<String> names;
+
+        DirListing(long fetchedAt, @NonNull Set<String> names) {
+            this.fetchedAt = fetchedAt;
+            this.names = names;
+        }
+    }
+
+    private static final Map<Long, DirListing> LISTING_CACHE = new ConcurrentHashMap<>();
+
+    @NonNull
+    private static Set<String> galleryFilenames(@NonNull GalleryInfo info) {
+        DirListing cached = LISTING_CACHE.get(info.gid);
+        long now = SystemClock.elapsedRealtime();
+        if (cached != null && now - cached.fetchedAt < LISTING_CACHE_TTL_MS) {
+            return cached.names;
+        }
+        Set<String> names = new HashSet<>();
+        try {
+            String[] list = resolveGalleryDir(info).list();
+            if (list != null) {
+                Collections.addAll(names, list);
+            }
+        } catch (Throwable e) {
+            // Folder may not exist yet (gallery not saved) — treat as empty, cache the miss so we
+            // don't re-probe a missing dir on every page.
+        }
+        LISTING_CACHE.put(info.gid, new DirListing(now, names));
+        return names;
+    }
+
+    private static void invalidateListing(long gid) {
+        LISTING_CACHE.remove(gid);
+    }
+
     public static boolean prepareGalleryDir(@NonNull GalleryInfo info) {
         try {
             getGalleryDir(info);
+            invalidateListing(info.gid);
             return true;
         } catch (Throwable e) {
             Log.e(TAG, "Failed to prepare SMB gallery dir gid=" + info.gid, e);
@@ -152,9 +219,7 @@ public final class SmbStorage {
             // Build the directory reference without auto-creating it (getGalleryDir would
             // mkdirs() on a missing dir, then we'd immediately try to delete what we just
             // created — wasteful at best, wrong at worst if the dir never existed).
-            CIFSContext cifs = buildContext();
-            SmbFile shareRoot = new SmbFile(buildSmbUrl(), cifs);
-            SmbFile galleryDir = new SmbFile(shareRoot, SmbPaths.buildGalleryFolderName(info) + "/");
+            SmbFile galleryDir = resolveGalleryDir(info);
             if (!galleryDir.exists()) {
                 return true;
             }
@@ -165,6 +230,8 @@ public final class SmbStorage {
         } catch (Throwable e) {
             Log.w(TAG, "Failed to delete SMB gallery folder gid=" + info.gid, e);
             return false;
+        } finally {
+            invalidateListing(info.gid);
         }
     }
 
@@ -284,12 +351,12 @@ public final class SmbStorage {
 
     @Nullable
     private static SmbFile findSmbImageFile(@NonNull GalleryInfo info, int index) throws IOException {
-        SmbFile galleryDir = getGalleryDir(info);
+        Set<String> names = galleryFilenames(info);
         for (String extension : com.hippo.ehviewer.gallery.GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
             String filename = SpiderDen.generateImageFilename(index, extension);
-            SmbFile file = new SmbFile(galleryDir, filename);
-            if (file.exists()) {
-                return file;
+            if (names.contains(filename)) {
+                // Build the single matching file reference; no per-extension exists() round-trips.
+                return new SmbFile(resolveGalleryDir(info), filename);
             }
         }
         return null;
@@ -386,19 +453,28 @@ public final class SmbStorage {
     }
 
     public static boolean containImage(@NonNull GalleryInfo info, int index) {
-        try {
-            return findSmbImageFile(info, index) != null;
-        } catch (Throwable e) {
-            return false;
+        Set<String> names = galleryFilenames(info);
+        for (String extension : com.hippo.ehviewer.gallery.GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
+            if (names.contains(SpiderDen.generateImageFilename(index, extension))) {
+                return true;
+            }
         }
+        return false;
     }
 
     public static boolean removeImage(@NonNull GalleryInfo info, int index) {
         boolean result = false;
         try {
-            SmbFile galleryDir = getGalleryDir(info);
+            Set<String> names = galleryFilenames(info);
+            SmbFile galleryDir = null;
             for (String extension : com.hippo.ehviewer.gallery.GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
                 String filename = SpiderDen.generateImageFilename(index, extension);
+                if (!names.contains(filename)) {
+                    continue;
+                }
+                if (galleryDir == null) {
+                    galleryDir = resolveGalleryDir(info);
+                }
                 SmbFile file = new SmbFile(galleryDir, filename);
                 if (file.exists()) {
                     file.delete();
@@ -407,6 +483,8 @@ public final class SmbStorage {
             }
         } catch (Throwable e) {
             Log.w(TAG, "Failed to remove SMB image gid=" + info.gid + ", index=" + index, e);
+        } finally {
+            invalidateListing(info.gid);
         }
         return result;
     }
@@ -589,6 +667,10 @@ public final class SmbStorage {
             downloadAndWriteCover(context, galleryDir, info);
         } catch (Throwable e) {
             Log.e(TAG, "Failed to finalize SMB gallery gid=" + info.gid, e);
+        } finally {
+            // The download just wrote every page; drop the stale listing so a reader opening this
+            // gallery right after sees the saved files instead of a pre-download empty snapshot.
+            invalidateListing(info.gid);
         }
     }
 
