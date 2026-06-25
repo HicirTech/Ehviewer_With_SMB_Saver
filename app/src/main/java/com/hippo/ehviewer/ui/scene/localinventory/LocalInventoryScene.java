@@ -79,6 +79,9 @@ public class LocalInventoryScene extends ToolbarScene
 
     private final List<GalleryInfo> mList = new ArrayList<>();
     private volatile boolean mLoading;
+    // First visible adapter position, captured when the view is torn down (e.g. on the way into a
+    // gallery detail) so it can be restored when the scene comes back, instead of snapping to the top.
+    private int mSavedFirstVisible = 0;
     @Nullable
     private ExecutorService mExecutor;
 
@@ -154,8 +157,22 @@ public class LocalInventoryScene extends ToolbarScene
                         ViewUtils.$$(view, R.id.sort_fab);
         sortFab.setOnClickListener(v -> showSortDialog());
 
-        showLoadingState();
-        reload();
+        if (!mList.isEmpty()) {
+            // The scene fragment survived (e.g. we're coming back from a gallery detail) and still
+            // holds a loaded inventory. Reuse it and restore the previous scroll position rather than
+            // re-scanning the whole share and jumping back to the top — matches how the normal
+            // gallery list keeps its place on return.
+            mAdapter.notifyDataSetChanged();
+            if (mViewTransition != null) {
+                mViewTransition.showView(0, false);
+            }
+            if (mSavedFirstVisible > 0) {
+                mRecyclerView.scrollToPosition(mSavedFirstVisible);
+            }
+        } else {
+            showLoadingState();
+            reload();
+        }
         return view;
     }
 
@@ -169,7 +186,10 @@ public class LocalInventoryScene extends ToolbarScene
     @Override
     public void onResume() {
         super.onResume();
-        reload();
+        // Deliberately no reload() here. Re-scanning the whole share on every resume (which fires
+        // when returning from a gallery detail) wastes a full SMB metadata sweep and discards the
+        // user's scroll position. New downloads surface via the refresh menu / sort, like the
+        // normal gallery list.
     }
 
     @Override
@@ -201,6 +221,14 @@ public class LocalInventoryScene extends ToolbarScene
     public void onDestroyView() {
         super.onDestroyView();
         if (mRecyclerView != null) {
+            // Remember where the user was so onCreateView3 can restore it when the scene returns.
+            RecyclerView.LayoutManager lm = mRecyclerView.getLayoutManager();
+            if (lm instanceof StaggeredGridLayoutManager) {
+                int[] firstVisible = ((StaggeredGridLayoutManager) lm).findFirstVisibleItemPositions(null);
+                if (firstVisible != null && firstVisible.length > 0 && firstVisible[0] >= 0) {
+                    mSavedFirstVisible = firstVisible[0];
+                }
+            }
             mRecyclerView.stopScroll();
             mRecyclerView = null;
         }
@@ -243,6 +271,9 @@ public class LocalInventoryScene extends ToolbarScene
             return;
         }
         mLoading = true;
+        // A reload is a fresh sweep (first load, refresh, or sort change); start from the top so a
+        // later view recreation doesn't restore a position that may no longer exist.
+        mSavedFirstVisible = 0;
         final SmbSortMode mode = SmbSortMode.fromOrdinal(Settings.getLocalInventorySort());
         // Snapshot the application context up front. The Runnable below runs on the worker
         // pool and the SimpleHandler.post lambdas run on the main thread; both can fire
