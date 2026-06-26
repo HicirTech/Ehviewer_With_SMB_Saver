@@ -6,13 +6,13 @@
  */
 package com.hippo.ehviewer.ui.scene.localinventory;
 
+import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
@@ -20,6 +20,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.RecyclerView;
@@ -27,8 +28,6 @@ import androidx.recyclerview.widget.StaggeredGridLayoutManager;
 
 import com.hippo.android.resource.AttrResources;
 import com.hippo.easyrecyclerview.EasyRecyclerView;
-import com.hippo.easyrecyclerview.FastScroller;
-import com.hippo.easyrecyclerview.HandlerDrawable;
 import com.hippo.easyrecyclerview.MarginItemDecoration;
 import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.R;
@@ -38,50 +37,60 @@ import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.smb.SmbCoverDataContainer;
 import com.hippo.ehviewer.smb.SmbMetadata;
+import com.hippo.ehviewer.smb.SmbPaths;
 import com.hippo.ehviewer.smb.SmbSortMode;
 import com.hippo.ehviewer.smb.SmbStorage;
 import com.hippo.ehviewer.ui.GalleryActivity;
 import com.hippo.ehviewer.ui.scene.ToolbarScene;
 import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryDetailScene;
+import com.hippo.ehviewer.widget.GalleryInfoContentHelper;
 import com.hippo.ehviewer.widget.SimpleRatingView;
 import com.hippo.lib.yorozuya.SimpleHandler;
 import com.hippo.lib.yorozuya.ViewUtils;
 import com.hippo.ripple.Ripple;
 import com.hippo.scene.Announcer;
-import com.hippo.util.DrawableManager;
-import com.hippo.view.ViewTransition;
+import com.hippo.widget.ContentLayout;
 import com.hippo.widget.LoadImageView;
+import com.hippo.widget.Slider;
 import com.hippo.widget.recyclerview.AutoStaggeredGridLayoutManager;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
  * Browses galleries that were saved to the SMB share. Completely independent of
- * {@code FavoritesScene} — this scene only renders content read from
- * {@link SmbStorage#loadInventory()} and never touches Eh favorites state.
+ * {@code FavoritesScene} — this scene only renders content read from the share and never touches Eh
+ * favorites state.
+ *
+ * <p>Paginates exactly like the online gallery list: it drives a {@link ContentLayout} through a
+ * {@link ContentLayout.ContentHelper}, so it gets the same page-by-page navigation (pull for
+ * next/prev page, "go to page" jump) and the same data/scroll retention on return from a detail.
+ * Each page reads only its own slice of {@code metadata.json} files, so a big share never blocks on
+ * a full up-front sweep.
  */
 public class LocalInventoryScene extends ToolbarScene
         implements EasyRecyclerView.OnItemClickListener {
 
+    // Galleries read per page. Bounds the SMB metadata reads done before a page can render.
+    private static final int PAGE_SIZE = 50;
+
     @Nullable
     private EasyRecyclerView mRecyclerView;
     @Nullable
-    private ViewTransition mViewTransition;
-    @Nullable
     private InventoryAdapter mAdapter;
     @Nullable
-    private TextView mTip;
-
-    private final List<GalleryInfo> mList = new ArrayList<>();
-    private volatile boolean mLoading;
-    // First visible adapter position, captured when the view is torn down (e.g. on the way into a
-    // gallery detail) so it can be restored when the scene comes back, instead of snapping to the top.
-    private int mSavedFirstVisible = 0;
+    private InventoryHelper mHelper;
+    private boolean mHasFirstRefresh;
     @Nullable
     private ExecutorService mExecutor;
 
@@ -104,24 +113,12 @@ public class LocalInventoryScene extends ToolbarScene
     public View onCreateView3(LayoutInflater inflater,
             @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.scene_local_inventory, container, false);
-        View content = ViewUtils.$$(view, R.id.content);
-        mRecyclerView = (EasyRecyclerView) ViewUtils.$$(content, R.id.recycler_view);
-        FastScroller fastScroller = (FastScroller) ViewUtils.$$(content, R.id.fast_scroller);
-        mTip = (TextView) ViewUtils.$$(view, R.id.tip);
-        mViewTransition = new ViewTransition(content, mTip);
+        ContentLayout contentLayout = (ContentLayout) ViewUtils.$$(view, R.id.content_layout);
+        mRecyclerView = contentLayout.getRecyclerView();
 
         Context context = getEHContext();
         if (context == null) return view;
         Resources resources = context.getResources();
-
-        // Match the empty-view "sad pandroid" style used by ContentLayout-based scenes
-        // (FavoritesScene, GalleryListScene...): a centered TextView with the vector
-        // sadroid drawable as the compound top icon.
-        Drawable sadDrawable = DrawableManager.getVectorDrawable(context, R.drawable.big_sad_pandroid);
-        if (sadDrawable != null) {
-            sadDrawable.setBounds(0, 0, sadDrawable.getIntrinsicWidth(), sadDrawable.getIntrinsicHeight());
-            mTip.setCompoundDrawables(null, sadDrawable, null, null);
-        }
 
         mAdapter = new InventoryAdapter();
         mAdapter.setHasStableIds(true);
@@ -147,33 +144,30 @@ public class LocalInventoryScene extends ToolbarScene
         mRecyclerView.addItemDecoration(decoration);
         decoration.applyPaddings(mRecyclerView);
 
-        fastScroller.attachToRecyclerView(mRecyclerView);
-        HandlerDrawable handlerDrawable = new HandlerDrawable();
-        handlerDrawable.setColor(AttrResources.getAttrColor(context, R.attr.widgetColorThemeAccent));
-        fastScroller.setHandlerDrawable(handlerDrawable);
+        mHelper = new InventoryHelper();
+        mHelper.setEmptyString(getEmptyString());
+        contentLayout.setHelper(mHelper);
 
         com.google.android.material.floatingactionbutton.FloatingActionButton sortFab =
                 (com.google.android.material.floatingactionbutton.FloatingActionButton)
                         ViewUtils.$$(view, R.id.sort_fab);
         sortFab.setOnClickListener(v -> showSortDialog());
 
-        if (!mList.isEmpty()) {
-            // The scene fragment survived (e.g. we're coming back from a gallery detail) and still
-            // holds a loaded inventory. Reuse it and restore the previous scroll position rather than
-            // re-scanning the whole share and jumping back to the top — matches how the normal
-            // gallery list keeps its place on return.
-            mAdapter.notifyDataSetChanged();
-            if (mViewTransition != null) {
-                mViewTransition.showView(0, false);
-            }
-            if (mSavedFirstVisible > 0) {
-                mRecyclerView.scrollToPosition(mSavedFirstVisible);
-            }
-        } else {
-            showLoadingState();
-            reload();
+        // Only the first time. On return from a detail the ContentLayout restores its data and scroll
+        // position from saved view state, exactly like the online gallery list.
+        if (!mHasFirstRefresh) {
+            mHasFirstRefresh = true;
+            mHelper.firstRefresh();
         }
         return view;
+    }
+
+    @NonNull
+    private String getEmptyString() {
+        if (!SmbStorage.isConfigured() || !Settings.getSmbSaveEnabled()) {
+            return getString(R.string.local_inventory_disabled);
+        }
+        return getString(R.string.local_inventory_empty);
     }
 
     @Override
@@ -181,15 +175,6 @@ public class LocalInventoryScene extends ToolbarScene
         super.onViewCreated(view, savedInstanceState);
         setTitle(R.string.local_inventory);
         setNavigationIcon(R.drawable.v_arrow_left_dark_x24);
-    }
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        // Deliberately no reload() here. Re-scanning the whole share on every resume (which fires
-        // when returning from a gallery detail) wastes a full SMB metadata sweep and discards the
-        // user's scroll position. New downloads surface via the refresh menu / sort, like the
-        // normal gallery list.
     }
 
     @Override
@@ -201,8 +186,13 @@ public class LocalInventoryScene extends ToolbarScene
     public boolean onMenuItemClick(MenuItem item) {
         int id = item.getItemId();
         if (id == R.id.action_refresh) {
-            showLoadingState();
-            reload();
+            if (mHelper != null) {
+                mHelper.refresh();
+            }
+            return true;
+        }
+        if (id == R.id.action_go_to) {
+            showGoToDialog();
             return true;
         }
         if (id == R.id.action_smb_tasks) {
@@ -210,6 +200,25 @@ public class LocalInventoryScene extends ToolbarScene
             return true;
         }
         return false;
+    }
+
+    private void showGoToDialog() {
+        Context context = getEHContext();
+        if (context == null || mHelper == null) {
+            return;
+        }
+        int pages = mHelper.getPages();
+        if (pages <= 0 || !mHelper.canGoTo()) {
+            return;
+        }
+        GoToDialogHelper helper = new GoToDialogHelper(pages, mHelper.getPageForTop());
+        AlertDialog dialog = new AlertDialog.Builder(context)
+                .setTitle(R.string.go_to)
+                .setView(R.layout.dialog_go_to)
+                .setPositiveButton(android.R.string.ok, null)
+                .create();
+        dialog.show();
+        helper.setDialog(dialog);
     }
 
     @Override
@@ -220,30 +229,20 @@ public class LocalInventoryScene extends ToolbarScene
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        if (mRecyclerView != null) {
-            // Remember where the user was so onCreateView3 can restore it when the scene returns.
-            RecyclerView.LayoutManager lm = mRecyclerView.getLayoutManager();
-            if (lm instanceof StaggeredGridLayoutManager) {
-                int[] firstVisible = ((StaggeredGridLayoutManager) lm).findFirstVisibleItemPositions(null);
-                if (firstVisible != null && firstVisible.length > 0 && firstVisible[0] >= 0) {
-                    mSavedFirstVisible = firstVisible[0];
-                }
+        if (mHelper != null) {
+            // Drop the favourite-status listener registered by GalleryInfoContentHelper. If the share
+            // is currently empty, allow a fresh first refresh next time the view is created.
+            if (1 == mHelper.getShownViewIndex()) {
+                mHasFirstRefresh = false;
             }
+            mHelper.destroy();
+            mHelper = null;
+        }
+        if (mRecyclerView != null) {
             mRecyclerView.stopScroll();
             mRecyclerView = null;
         }
-        mViewTransition = null;
         mAdapter = null;
-        mTip = null;
-    }
-
-    private void showLoadingState() {
-        if (mTip != null) {
-            mTip.setText(R.string.local_inventory_loading);
-        }
-        if (mViewTransition != null && (mAdapter == null || mAdapter.getItemCount() == 0)) {
-            mViewTransition.showView(1, false);
-        }
     }
 
     private void showSortDialog() {
@@ -257,8 +256,9 @@ public class LocalInventoryScene extends ToolbarScene
                 .setSingleChoiceItems(R.array.local_inventory_sort, current, (dialog, which) -> {
                     if (which != Settings.getLocalInventorySort()) {
                         Settings.putLocalInventorySort(which);
-                        showLoadingState();
-                        reload();
+                        if (mHelper != null) {
+                            mHelper.refresh();
+                        }
                     }
                     dialog.dismiss();
                 })
@@ -266,102 +266,15 @@ public class LocalInventoryScene extends ToolbarScene
                 .show();
     }
 
-    private void reload() {
-        if (mLoading) {
-            return;
-        }
-        mLoading = true;
-        // A reload is a fresh sweep (first load, refresh, or sort change); start from the top so a
-        // later view recreation doesn't restore a position that may no longer exist.
-        mSavedFirstVisible = 0;
-        final SmbSortMode mode = SmbSortMode.fromOrdinal(Settings.getLocalInventorySort());
-        // Snapshot the application context up front. The Runnable below runs on the worker
-        // pool and the SimpleHandler.post lambdas run on the main thread; both can fire
-        // after onDestroyView has detached the fragment. Calling Fragment.getString from
-        // there would throw IllegalStateException. The app context lives for the process,
-        // so it's safe regardless of scene lifecycle.
-        Context ctxSnapshot = getEHContext();
-        final Context appContext = ctxSnapshot != null
-                ? ctxSnapshot.getApplicationContext()
-                : EhApplication.getInstance();
-        Runnable task = () -> {
-            final List<GalleryInfo> loaded;
-            try {
-                // Issue #2644 requires a 7s timeout — if the share can't be reached by then,
-                // surface the sad-pandroid error state instead of hanging the scene indefinitely.
-                // We can't bound jcifs's internal socket timeouts without rebuilding the global
-                // SingletonContext, so we wrap the actual load in a Future with a hard cap.
-                java.util.concurrent.ExecutorService pool =
-                        java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-                            Thread t = new Thread(r, "smb-inventory-load");
-                            t.setDaemon(true);
-                            return t;
-                        });
-                Future<List<GalleryInfo>> fut = pool.submit(() -> SmbStorage.loadInventory(mode));
-                try {
-                    loaded = fut.get(7, TimeUnit.SECONDS);
-                } catch (TimeoutException te) {
-                    fut.cancel(true);
-                    throw new java.io.IOException(appContext.getString(R.string.local_inventory_timeout));
-                } finally {
-                    pool.shutdownNow();
-                }
-            } catch (Throwable e) {
-                SimpleHandler.getInstance().post(() -> {
-                    mLoading = false;
-                    if (mTip != null) {
-                        mTip.setText(appContext.getString(R.string.local_inventory_error, e.getMessage()));
-                    }
-                    if (mViewTransition != null) {
-                        mViewTransition.showView(1, true);
-                    }
-                });
-                return;
-            }
-            SimpleHandler.getInstance().post(() -> {
-                mLoading = false;
-                mList.clear();
-                if (loaded != null) {
-                    mList.addAll(loaded);
-                    // Pre-mark every SMB-saved gid so any read path (cover load, detail
-                    // navigation, reader launch) routes through SmbStorage rather than
-                    // looking on phone storage.
-                    for (GalleryInfo gi : loaded) {
-                        SmbStorage.markGidAsSmbTarget(gi.gid);
-                    }
-                }
-                if (mAdapter != null) {
-                    mAdapter.notifyDataSetChanged();
-                }
-                if (mViewTransition != null) {
-                    if (mList.isEmpty()) {
-                        if (mTip != null) {
-                            if (!SmbStorage.isConfigured() || !Settings.getSmbSaveEnabled()) {
-                                mTip.setText(R.string.local_inventory_disabled);
-                            } else {
-                                mTip.setText(R.string.local_inventory_empty);
-                            }
-                        }
-                        mViewTransition.showView(1, true);
-                    } else {
-                        mViewTransition.showView(0, true);
-                    }
-                }
-            });
-        };
-        if (mExecutor != null) {
-            mExecutor.execute(task);
-        } else {
-            new Thread(task, "LocalInventoryLoader").start();
-        }
-    }
-
     @Override
     public boolean onItemClick(EasyRecyclerView parent, View view, int position, long id) {
-        if (position < 0 || position >= mList.size()) {
+        if (mHelper == null) {
             return false;
         }
-        GalleryInfo gi = mList.get(position);
+        GalleryInfo gi = mHelper.getDataAtEx(position);
+        if (gi == null) {
+            return false;
+        }
         openDetail(gi);
         return true;
     }
@@ -433,8 +346,8 @@ public class LocalInventoryScene extends ToolbarScene
     private final class InventoryAdapter extends RecyclerView.Adapter<InventoryHolder> {
         @Override
         public long getItemId(int position) {
-            if (position < 0 || position >= mList.size()) return RecyclerView.NO_ID;
-            return mList.get(position).gid;
+            GalleryInfo gi = mHelper != null ? mHelper.getDataAtEx(position) : null;
+            return gi != null ? gi.gid : RecyclerView.NO_ID;
         }
 
         @Override
@@ -445,37 +358,268 @@ public class LocalInventoryScene extends ToolbarScene
 
         @Override
         public void onBindViewHolder(InventoryHolder holder, int position) {
-            GalleryInfo gi = mList.get(position);
-            // Route the cover load through SmbCoverDataContainer so Conaco reads cover.<ext>
-            // straight from the SMB share (saved alongside the gallery at download time)
-            // instead of hitting e-hentai for the thumbnail URL. useNetwork=false makes the
-            // load offline-only — if the on-share cover is missing the cell just stays empty
-            // rather than silently leaking out to the network.
-            holder.thumb.load(EhCacheKeyFactory.getThumbKey(gi.gid),
-                    gi.thumb != null ? gi.thumb : ("smb-cover://" + gi.gid),
-                    new SmbCoverDataContainer(gi.gid, gi.title), false, false);
-            // Tap the thumbnail to jump straight into the reader (offline-friendly path).
-            // Tapping anywhere else on the card opens the gallery detail page (handled by the
-            // RecyclerView's OnItemClickListener).
-            holder.thumb.setOnClickListener(v -> openReader(gi));
-            holder.title.setText(EhUtils.getSuitableTitle(gi));
-            holder.uploader.setText(gi.uploader);
-            holder.rating.setRating(gi.rating);
-            String catText = EhUtils.getCategory(gi.category);
-            holder.category.setText(catText);
-            holder.category.setBackgroundColor(EhUtils.getCategoryColor(gi.category));
-            holder.posted.setText(gi.posted);
-            holder.simpleLanguage.setText(gi.simpleLanguage);
-            if (gi.pages > 0) {
-                holder.pages.setText(getResources().getQuantityString(R.plurals.page_count, gi.pages, gi.pages));
-            } else {
-                holder.pages.setText(null);
+            GalleryInfo gi = mHelper != null ? mHelper.getDataAtEx(position) : null;
+            if (gi != null) {
+                bind(holder, gi);
             }
         }
 
         @Override
         public int getItemCount() {
-            return mList.size();
+            return mHelper != null ? mHelper.size() : 0;
+        }
+    }
+
+    private void bind(@NonNull InventoryHolder holder, @NonNull GalleryInfo gi) {
+        // Route the cover load through SmbCoverDataContainer so Conaco reads cover.<ext>
+        // straight from the SMB share (saved alongside the gallery at download time)
+        // instead of hitting e-hentai for the thumbnail URL. useNetwork=false makes the
+        // load offline-only — if the on-share cover is missing the cell just stays empty
+        // rather than silently leaking out to the network.
+        holder.thumb.load(EhCacheKeyFactory.getThumbKey(gi.gid),
+                gi.thumb != null ? gi.thumb : ("smb-cover://" + gi.gid),
+                new SmbCoverDataContainer(gi.gid, gi.title), false, false);
+        // Tap the thumbnail to jump straight into the reader (offline-friendly path).
+        // Tapping anywhere else on the card opens the gallery detail page (handled by the
+        // RecyclerView's OnItemClickListener).
+        holder.thumb.setOnClickListener(v -> openReader(gi));
+        holder.title.setText(EhUtils.getSuitableTitle(gi));
+        holder.uploader.setText(gi.uploader);
+        holder.rating.setRating(gi.rating);
+        String catText = EhUtils.getCategory(gi.category);
+        holder.category.setText(catText);
+        holder.category.setBackgroundColor(EhUtils.getCategoryColor(gi.category));
+        holder.posted.setText(gi.posted);
+        holder.simpleLanguage.setText(gi.simpleLanguage);
+        if (gi.pages > 0) {
+            holder.pages.setText(getResources().getQuantityString(R.plurals.page_count, gi.pages, gi.pages));
+        } else {
+            holder.pages.setText(null);
+        }
+    }
+
+    /** One page's galleries plus the total page count, computed off the main thread. */
+    private static final class PageResult {
+        @NonNull final List<GalleryInfo> data;
+        final int pages;
+
+        PageResult(@NonNull List<GalleryInfo> data, int pages) {
+            this.data = data;
+            this.pages = pages;
+        }
+    }
+
+    /** The full display ordering, computed once per refresh and sliced per page. */
+    private static final class Ordering {
+        @NonNull final List<SmbStorage.GalleryRef> refs;
+        // null => date sort: each ref's metadata is read on demand for its page.
+        // non-null => sort needed every folder's metadata to order, so it's all cached here.
+        @Nullable final Map<String, GalleryInfo> infos;
+
+        Ordering(@NonNull List<SmbStorage.GalleryRef> refs, @Nullable Map<String, GalleryInfo> infos) {
+            this.refs = refs;
+            this.infos = infos;
+        }
+    }
+
+    private final class InventoryHelper extends GalleryInfoContentHelper {
+
+        // Cached across page fetches so paging doesn't re-list the share every page. Rebuilt on
+        // refresh. volatile because it's assigned/read from the load executor.
+        @Nullable
+        private volatile Ordering mOrdering;
+
+        @Override
+        protected void getPageData(int taskId, int type, int page) {
+            // Date sort can order from the cheap listing alone; rebuild the ordering on a refresh or
+            // when we have none yet (e.g. paging after the view was recreated).
+            final boolean rebuild = type == TYPE_REFRESH || mOrdering == null;
+            final SmbSortMode mode = SmbSortMode.fromOrdinal(Settings.getLocalInventorySort());
+            Runnable task = () -> {
+                final PageResult result;
+                try {
+                    // Issue #2644 requires a hard 7s cap — if the share can't be reached, surface the
+                    // error state instead of hanging. jcifs's socket timeouts can't be bounded without
+                    // rebuilding the global SingletonContext, so wrap the read in a Future.
+                    ExecutorService pool = Executors.newSingleThreadExecutor(r -> {
+                        Thread t = new Thread(r, "smb-inventory-page");
+                        t.setDaemon(true);
+                        return t;
+                    });
+                    Future<PageResult> fut = pool.submit(() -> loadPage(mode, page, rebuild));
+                    try {
+                        result = fut.get(7, TimeUnit.SECONDS);
+                    } catch (TimeoutException te) {
+                        fut.cancel(true);
+                        throw new IOException(EhApplication.getInstance()
+                                .getString(R.string.local_inventory_timeout));
+                    } finally {
+                        pool.shutdownNow();
+                    }
+                } catch (Throwable e) {
+                    final Exception ex = e instanceof Exception ? (Exception) e : new Exception(e);
+                    SimpleHandler.getInstance().post(() -> {
+                        if (isCurrentTask(taskId)) {
+                            onGetException(taskId, ex);
+                        }
+                    });
+                    return;
+                }
+                SimpleHandler.getInstance().post(() -> {
+                    if (!isCurrentTask(taskId)) {
+                        return;
+                    }
+                    // Mark every gid on the page so cover/detail/reader reads route through SMB.
+                    for (GalleryInfo gi : result.data) {
+                        SmbStorage.markGidAsSmbTarget(gi.gid);
+                    }
+                    onGetPageData(taskId, result.pages, page + 1, result.data);
+                });
+            };
+            if (mExecutor != null) {
+                mExecutor.execute(task);
+            } else {
+                new Thread(task, "LocalInventoryLoader").start();
+            }
+        }
+
+        @Override
+        protected void getPageData(int taskId, int type, int page, String append) {
+            getPageData(taskId, type, page);
+        }
+
+        @Override
+        protected void getExPageData(int pageAction, int taskId, int page) {
+            // Inventory paging is plain page-index based (no e-hentai prev/next hrefs), so this is the
+            // same fetch as the normal path.
+            getPageData(taskId, pageAction, page);
+        }
+
+        @NonNull
+        private PageResult loadPage(@NonNull SmbSortMode mode, int page, boolean rebuild) {
+            Ordering ordering = mOrdering;
+            if (rebuild || ordering == null) {
+                ordering = buildOrdering(mode);
+                mOrdering = ordering;
+            }
+            List<SmbStorage.GalleryRef> refs = ordering.refs;
+            int total = refs.size();
+            int pages = Math.max(1, (total + PAGE_SIZE - 1) / PAGE_SIZE);
+            List<GalleryInfo> data = new ArrayList<>();
+            int from = page * PAGE_SIZE;
+            int to = Math.min(from + PAGE_SIZE, total);
+            for (int i = from; i < to; i++) {
+                SmbStorage.GalleryRef ref = refs.get(i);
+                GalleryInfo gi = ordering.infos != null
+                        ? ordering.infos.get(ref.folderName)
+                        : SmbStorage.readGalleryInfo(ref);
+                if (gi != null) {
+                    data.add(gi);
+                }
+            }
+            return new PageResult(data, pages);
+        }
+
+        @NonNull
+        private Ordering buildOrdering(@NonNull SmbSortMode mode) {
+            if (mode == SmbSortMode.DOWNLOAD_DATE_DESC) {
+                // Recently-downloaded order keys off the folder mtime the listing already carries, so
+                // no metadata is read until a page needs it.
+                List<SmbStorage.GalleryRef> refs = SmbStorage.listGalleryRefs();
+                Collections.sort(refs, (a, b) -> Long.compare(b.folderMtime, a.folderMtime));
+                return new Ordering(refs, null);
+            }
+            // Other sorts need fields that only live in metadata.json, so the whole share has to be
+            // read to order it; cache it and serve pages from the cache.
+            List<GalleryInfo> loaded = SmbStorage.loadInventory(mode);
+            List<SmbStorage.GalleryRef> refs = new ArrayList<>(loaded.size());
+            Map<String, GalleryInfo> infos = new HashMap<>();
+            for (GalleryInfo gi : loaded) {
+                String folderName = SmbPaths.buildGalleryFolderName(gi);
+                refs.add(new SmbStorage.GalleryRef(folderName, 0L));
+                infos.put(folderName, gi);
+            }
+            return new Ordering(refs, infos);
+        }
+
+        @Override
+        protected Context getContext() {
+            return LocalInventoryScene.this.getEHContext();
+        }
+
+        @Override
+        protected void notifyDataSetChanged() {
+            if (mAdapter != null) {
+                mAdapter.notifyDataSetChanged();
+            }
+        }
+
+        @Override
+        protected void notifyItemRangeRemoved(int positionStart, int itemCount) {
+            if (mAdapter != null) {
+                mAdapter.notifyItemRangeRemoved(positionStart, itemCount);
+            }
+        }
+
+        @Override
+        protected void notifyItemRangeInserted(int positionStart, int itemCount) {
+            if (mAdapter != null) {
+                mAdapter.notifyItemRangeInserted(positionStart, itemCount);
+            }
+        }
+
+        @Override
+        protected boolean isDuplicate(GalleryInfo d1, GalleryInfo d2) {
+            return d1.gid == d2.gid;
+        }
+    }
+
+    private class GoToDialogHelper implements View.OnClickListener,
+            DialogInterface.OnDismissListener {
+
+        private final int mPages;
+        private final int mCurrentPage;
+
+        @Nullable
+        private Slider mSlider;
+        @Nullable
+        private Dialog mDialog;
+
+        private GoToDialogHelper(int pages, int currentPage) {
+            mPages = pages;
+            mCurrentPage = currentPage;
+        }
+
+        public void setDialog(@NonNull AlertDialog dialog) {
+            mDialog = dialog;
+            ((TextView) ViewUtils.$$(dialog, R.id.start)).setText(String.format(Locale.US, "%d", 1));
+            ((TextView) ViewUtils.$$(dialog, R.id.end)).setText(String.format(Locale.US, "%d", mPages));
+            mSlider = (Slider) ViewUtils.$$(dialog, R.id.slider);
+            mSlider.setRange(1, mPages);
+            mSlider.setProgress(mCurrentPage + 1);
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(this);
+            dialog.setOnDismissListener(this);
+        }
+
+        @Override
+        public void onClick(View v) {
+            if (mSlider == null || mHelper == null) {
+                return;
+            }
+            int page = mSlider.getProgress() - 1;
+            if (page >= 0 && page < mPages) {
+                mHelper.goTo(page);
+                if (mDialog != null) {
+                    mDialog.dismiss();
+                    mDialog = null;
+                }
+            }
+        }
+
+        @Override
+        public void onDismiss(DialogInterface dialog) {
+            mDialog = null;
+            mSlider = null;
         }
     }
 }

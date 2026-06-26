@@ -10,6 +10,12 @@
         app:showAsAction="always"/>
 
     <item
+        android:id="@+id/action_go_to"
+        android:icon="@drawable/v_go_to_dark_x24"
+        android:title="@string/go_to"
+        app:showAsAction="always"/>
+
+    <item
         android:id="@+id/action_smb_tasks"
         android:icon="@drawable/v_cloud_download_dark_x24"
         android:title="@string/smb_download_tasks"

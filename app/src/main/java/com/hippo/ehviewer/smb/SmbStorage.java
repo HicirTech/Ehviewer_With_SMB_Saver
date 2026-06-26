@@ -831,6 +831,107 @@ public final class SmbStorage {
         return out;
     }
 
+    /**
+     * A gallery folder located on the share but not yet read. {@link #loadInventory} reads every
+     * {@code metadata.json} up front before the list can show anything, which is O(folders) SMB
+     * round-trips on the first paint. The Local Inventory instead lists these refs once (a single
+     * share-root enumeration) and reads each folder's metadata lazily — only for the rows actually
+     * scrolled into view (see {@link #readGalleryInfo}).
+     *
+     * <p>{@link #folderMtime} is the folder's own modification time, which the directory enumeration
+     * already carries (no extra round-trip), so it can order the default "recently downloaded first"
+     * view without reading a single metadata file. It tracks the last write into the gallery folder,
+     * i.e. effectively when the download finished — equivalent to the old {@code metadata.json} mtime
+     * for ordering purposes.
+     */
+    public static final class GalleryRef {
+        @NonNull public final String folderName;
+        public final long folderMtime;
+
+        public GalleryRef(@NonNull String folderName, long folderMtime) {
+            this.folderName = folderName;
+            this.folderMtime = folderMtime;
+        }
+    }
+
+    /**
+     * Enumerates the gallery folders on the share in one listing, WITHOUT reading any
+     * {@code metadata.json}. Cheap enough to drive the first paint of the Local Inventory; callers
+     * read each folder's metadata on demand via {@link #readGalleryInfo}.
+     */
+    @NonNull
+    public static List<GalleryRef> listGalleryRefs() {
+        List<GalleryRef> refs = new ArrayList<>();
+        if (!isConfigured()) {
+            return refs;
+        }
+        try {
+            CIFSContext cifs = buildContext();
+            SmbFile shareRoot = new SmbFile(buildSmbUrl(), cifs);
+            if (!shareRoot.exists() || !shareRoot.isDirectory()) {
+                return refs;
+            }
+            SmbFile[] children = shareRoot.listFiles();
+            if (children == null) {
+                return refs;
+            }
+            for (SmbFile child : children) {
+                // type and timestamps are populated by the directory enumeration, so isDirectory()
+                // and lastModified() here don't cost extra round-trips.
+                if (!child.isDirectory()) {
+                    continue;
+                }
+                String name = child.getName();
+                if (name.endsWith("/")) {
+                    name = name.substring(0, name.length() - 1);
+                }
+                long mtime;
+                try {
+                    mtime = child.lastModified();
+                } catch (Throwable ignored) {
+                    mtime = 0L;
+                }
+                refs.add(new GalleryRef(name, mtime));
+            }
+        } catch (Throwable e) {
+            Log.e(TAG, "Failed to list SMB gallery folders", e);
+        }
+        return refs;
+    }
+
+    /**
+     * Reads one gallery folder's {@code metadata.json} into a {@link GalleryInfo}. Returns
+     * {@code null} when the folder has no parseable metadata. Safe to call off the main thread, one
+     * folder at a time, as rows scroll into view.
+     */
+    @Nullable
+    public static GalleryInfo readGalleryInfo(@NonNull GalleryRef ref) {
+        if (!isConfigured()) {
+            return null;
+        }
+        try {
+            CIFSContext cifs = buildContext();
+            SmbFile shareRoot = new SmbFile(buildSmbUrl(), cifs);
+            SmbFile folder = new SmbFile(shareRoot, ref.folderName + "/");
+            SmbFile metadata = new SmbFile(folder, METADATA_FILE);
+            if (!metadata.exists()) {
+                return null;
+            }
+            String json;
+            try (InputStream is = metadata.getInputStream()) {
+                json = readAll(is);
+            }
+            JSONObject object = JSONObject.parseObject(json);
+            if (object == null) {
+                return null;
+            }
+            return GalleryInfo.galleryInfoFromJson(object);
+        } catch (Throwable e) {
+            Log.e(TAG, "Failed to read SMB gallery metadata: " + ref.folderName, e);
+            return null;
+        }
+    }
+
     private static String readAll(InputStream is) throws IOException {
         // Byte-buffered read so JSON files round-trip unchanged. The previous readLine()
         // loop silently dropped every line terminator, which is harmless for single-line
