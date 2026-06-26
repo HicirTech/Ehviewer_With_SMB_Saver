@@ -5,37 +5,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <FrameLayout
-        android:id="@+id/content"
+    <com.hippo.widget.ContentLayout
+        android:id="@+id/content_layout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <com.hippo.easyrecyclerview.EasyRecyclerView
-            android:id="@+id/recycler_view"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"/>
-
-        <com.hippo.easyrecyclerview.FastScroller
-            android:id="@+id/fast_scroller"
-            android:layout_width="30dp"
-            android:layout_height="match_parent"
-            android:layout_gravity="right"
-            android:paddingLeft="20dp"
-            android:paddingRight="4dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp"/>
-
-    </FrameLayout>
-
-    <TextView
-        android:id="@+id/tip"
-        android:layout_width="228dp"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:gravity="center_horizontal"
-        android:drawablePadding="8dp"
-        android:text="@string/local_inventory_empty"
-        style="@style/TextAppearance.AppCompat.Medium"/>
+        android:layout_height="match_parent"/>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/sort_fab"
