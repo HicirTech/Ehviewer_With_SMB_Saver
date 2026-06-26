@@ -928,6 +928,19 @@ public class Settings {
     }
 
     /**
+     * When true, SMB connections are built without preferring/enforcing packet signing (see
+     * {@code SmbStorage.buildContext}). Signing adds a per-packet HMAC that can noticeably slow
+     * transfers on weaker CPUs (e.g. some MediaTek SoCs). Default false keeps jcifs' standard
+     * behaviour ("auto": sign only when the server requires it).
+     */
+    public static final String KEY_SMB_SIGNING_DISABLED = "smb_signing_disabled";
+    private static final boolean DEFAULT_SMB_SIGNING_DISABLED = false;
+
+    public static boolean getSmbSigningDisabled() {
+        return getBoolean(KEY_SMB_SIGNING_DISABLED, DEFAULT_SMB_SIGNING_DISABLED);
+    }
+
+    /**
      * Local Inventory sort mode. Values map to {@code SmbSortMode} ordinals
      * (0=DOWNLOAD_DATE_DESC, 1=POSTED_DATE_DESC, 2=TITLE_ASC, 3=CATEGORY).
      * Persisted so the user's preferred order is remembered across sessions.

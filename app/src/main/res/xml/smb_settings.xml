@@ -62,6 +62,16 @@
         app:useSimpleSummaryProvider="false"
         app:iconSpaceReserved="false" />
 
+    <PreferenceCategory
+        android:title="@string/settings_smb_category_advanced"
+        app:allowDividerAbove="false" />
+
+    <com.hippo.preference.SwitchPreference
+        android:defaultValue="false"
+        android:key="smb_signing_disabled"
+        android:title="@string/settings_smb_disable_signing"
+        android:summary="@string/settings_smb_disable_signing_summary" />
+
     <androidx.preference.Preference
         android:key="smb_test_connection"
         android:title="@string/settings_smb_test"

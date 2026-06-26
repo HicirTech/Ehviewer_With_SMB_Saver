@@ -733,6 +733,9 @@
     <string name="settings_smb_test">Test Connection</string>
     <string name="settings_smb_test_success">SMB connection successful!</string>
     <string name="settings_smb_test_failed">SMB connection failed: %s</string>
+    <string name="settings_smb_category_advanced">Advanced</string>
+    <string name="settings_smb_disable_signing">Disable SMB Signing</string>
+    <string name="settings_smb_disable_signing_summary">Skip per-packet signing for faster transfers on slow CPUs (e.g. some MediaTek SoCs). Leave off (auto) unless transfers feel slow; applies on the next connection.</string>
     <string name="settings_smb_invalid_config">SMB is enabled but share configuration is incomplete</string>
     <string name="settings_smb_field_unset">Tap to set</string>
     <string name="settings_smb_field_unset_password">Tap to set password</string>

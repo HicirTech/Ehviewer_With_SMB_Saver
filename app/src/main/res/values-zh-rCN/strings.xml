@@ -1045,6 +1045,9 @@
     <string name="settings_smb_test">测试连接</string>
     <string name="settings_smb_test_success">SMB 连接成功！</string>
     <string name="settings_smb_test_failed">SMB 连接失败：%s</string>
+    <string name="settings_smb_category_advanced">高级</string>
+    <string name="settings_smb_disable_signing">禁用 SMB 签名</string>
+    <string name="settings_smb_disable_signing_summary">跳过逐包签名，在慢 CPU（如部分联发科芯片）上加快传输。除非传输明显变慢，否则保持关闭（自动）；下次连接时生效。</string>
     <string name="settings_smb_invalid_config">SMB 已启用，但共享配置不完整</string>
     <string name="settings_smb_field_unset">点击设置</string>
     <string name="settings_smb_field_unset_password">点击设置密码</string>

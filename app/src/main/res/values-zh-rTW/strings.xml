@@ -1050,6 +1050,9 @@
     <string name="settings_smb_test">測試連線</string>
     <string name="settings_smb_test_success">SMB 連線成功！</string>
     <string name="settings_smb_test_failed">SMB 連線失敗：%s</string>
+    <string name="settings_smb_category_advanced">進階</string>
+    <string name="settings_smb_disable_signing">停用 SMB 簽署</string>
+    <string name="settings_smb_disable_signing_summary">略過逐封包簽署，在慢 CPU（例如部分聯發科晶片）上加快傳輸。除非傳輸明顯變慢，否則保持關閉（自動）；下次連線時生效。</string>
     <string name="settings_smb_invalid_config">SMB 已啟用，但共享設定不完整</string>
     <string name="settings_smb_field_unset">點擊設定</string>
     <string name="settings_smb_field_unset_password">點擊設定密碼</string>
