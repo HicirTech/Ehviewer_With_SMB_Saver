@@ -15,7 +15,6 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.view.LayoutInflater;
-import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
@@ -26,6 +25,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.StaggeredGridLayoutManager;
 
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.hippo.android.resource.AttrResources;
 import com.hippo.easyrecyclerview.EasyRecyclerView;
 import com.hippo.easyrecyclerview.MarginItemDecoration;
@@ -50,6 +50,7 @@ import com.hippo.lib.yorozuya.ViewUtils;
 import com.hippo.ripple.Ripple;
 import com.hippo.scene.Announcer;
 import com.hippo.widget.ContentLayout;
+import com.hippo.widget.FabLayout;
 import com.hippo.widget.LoadImageView;
 import com.hippo.widget.Slider;
 import com.hippo.widget.recyclerview.AutoStaggeredGridLayoutManager;
@@ -79,10 +80,16 @@ import java.util.concurrent.TimeoutException;
  * a full up-front sweep.
  */
 public class LocalInventoryScene extends ToolbarScene
-        implements EasyRecyclerView.OnItemClickListener {
+        implements EasyRecyclerView.OnItemClickListener, FabLayout.OnClickFabListener {
 
     // Galleries read per page. Bounds the SMB metadata reads done before a page can render.
     private static final int PAGE_SIZE = 50;
+
+    // Secondary FAB positions, in the order they're declared in scene_local_inventory.xml.
+    private static final int FAB_SORT = 0;
+    private static final int FAB_DOWNLOAD_TASKS = 1;
+    private static final int FAB_GO_TO = 2;
+    private static final int FAB_REFRESH = 3;
 
     @Nullable
     private EasyRecyclerView mRecyclerView;
@@ -90,6 +97,8 @@ public class LocalInventoryScene extends ToolbarScene
     private InventoryAdapter mAdapter;
     @Nullable
     private InventoryHelper mHelper;
+    @Nullable
+    private FabLayout mFabLayout;
     private boolean mHasFirstRefresh;
     @Nullable
     private ExecutorService mExecutor;
@@ -148,10 +157,14 @@ public class LocalInventoryScene extends ToolbarScene
         mHelper.setEmptyString(getEmptyString());
         contentLayout.setHelper(mHelper);
 
-        com.google.android.material.floatingactionbutton.FloatingActionButton sortFab =
-                (com.google.android.material.floatingactionbutton.FloatingActionButton)
-                        ViewUtils.$$(view, R.id.sort_fab);
-        sortFab.setOnClickListener(v -> showSortDialog());
+        // Group the list actions (refresh / go to page / download tasks / sort) into one expandable
+        // FAB, the same way the online gallery list does (com.hippo.widget.FabLayout: last child is
+        // the primary, the rest are secondary actions shown when expanded).
+        mFabLayout = (FabLayout) ViewUtils.$$(view, R.id.fab_layout);
+        mFabLayout.setAutoCancel(true);
+        mFabLayout.setExpanded(false, false);
+        mFabLayout.setHidePrimaryFab(false);
+        mFabLayout.setOnClickFabListener(this);
 
         // Only the first time. On return from a detail the ContentLayout restores its data and scroll
         // position from saved view state, exactly like the online gallery list.
@@ -178,28 +191,38 @@ public class LocalInventoryScene extends ToolbarScene
     }
 
     @Override
-    public int getMenuResId() {
-        return R.menu.scene_local_inventory;
+    public void onClickPrimaryFab(FabLayout view, FloatingActionButton fab) {
+        view.toggle();
     }
 
     @Override
-    public boolean onMenuItemClick(MenuItem item) {
-        int id = item.getItemId();
-        if (id == R.id.action_refresh) {
-            if (mHelper != null) {
-                mHelper.refresh();
-            }
-            return true;
+    public void onClickSecondaryFab(FabLayout view, FloatingActionButton fab, int position) {
+        switch (position) {
+            case FAB_SORT:
+                showSortDialog();
+                break;
+            case FAB_DOWNLOAD_TASKS:
+                startScene(new Announcer(SmbDownloadTasksScene.class));
+                break;
+            case FAB_GO_TO:
+                showGoToDialog();
+                break;
+            case FAB_REFRESH:
+                if (mHelper != null) {
+                    mHelper.refresh();
+                }
+                break;
         }
-        if (id == R.id.action_go_to) {
-            showGoToDialog();
-            return true;
+        view.setExpanded(false);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (mFabLayout != null && mFabLayout.isExpanded()) {
+            mFabLayout.setExpanded(false);
+            return;
         }
-        if (id == R.id.action_smb_tasks) {
-            startScene(new Announcer(SmbDownloadTasksScene.class));
-            return true;
-        }
-        return false;
+        super.onBackPressed();
     }
 
     private void showGoToDialog() {
@@ -243,6 +266,7 @@ public class LocalInventoryScene extends ToolbarScene
             mRecyclerView = null;
         }
         mAdapter = null;
+        mFabLayout = null;
     }
 
     private void showSortDialog() {

@@ -10,14 +10,52 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/sort_fab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_marginEnd="@dimen/corner_fab_margin"
-        android:layout_marginBottom="@dimen/corner_fab_margin"
-        app:backgroundTint="?attr/widgetColorThemeAccent"
-        app:srcCompat="@drawable/ic_twotone_sort_24" />
+    <com.hippo.widget.FabLayout
+        android:id="@+id/fab_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingRight="@dimen/corner_fab_margin"
+        android:paddingBottom="@dimen/corner_fab_margin">
+
+        <!-- Secondary 0: sort -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            style="@style/Widget.Design.FloatingActionButton.Mini"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:backgroundTint="?attr/widgetColorThemeAccent"
+            app:srcCompat="@drawable/ic_twotone_sort_24" />
+
+        <!-- Secondary 1: download tasks -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            style="@style/Widget.Design.FloatingActionButton.Mini"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:backgroundTint="?attr/widgetColorThemeAccent"
+            app:srcCompat="@drawable/v_cloud_download_dark_x24" />
+
+        <!-- Secondary 2: go to page -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            style="@style/Widget.Design.FloatingActionButton.Mini"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:backgroundTint="?attr/widgetColorThemeAccent"
+            app:srcCompat="@drawable/v_go_to_dark_x24" />
+
+        <!-- Secondary 3: refresh -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            style="@style/Widget.Design.FloatingActionButton.Mini"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:backgroundTint="?attr/widgetColorThemeAccent"
+            app:srcCompat="@drawable/v_refresh_dark_x24" />
+
+        <!-- Primary -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:backgroundTint="?attr/widgetColorThemePrimary"
+            app:srcCompat="@drawable/v_dots_vertical_secondary_dark_x24" />
+
+    </com.hippo.widget.FabLayout>
 
 </FrameLayout>
