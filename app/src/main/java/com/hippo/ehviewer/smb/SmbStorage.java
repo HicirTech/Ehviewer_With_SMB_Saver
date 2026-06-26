@@ -32,10 +32,13 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import jcifs.CIFSContext;
+import jcifs.config.PropertyConfiguration;
+import jcifs.context.BaseContext;
 import jcifs.context.SingletonContext;
 import jcifs.smb.NtlmPasswordAuthenticator;
 import jcifs.smb.SmbFile;
@@ -81,13 +84,56 @@ public final class SmbStorage {
 
     @NonNull
     private static CIFSContext buildContext() {
+        CIFSContext base = baseContext();
         String username = Settings.getSmbUsername();
-        String password = Settings.getSmbPassword();
         if (TextUtils.isEmpty(username)) {
+            return base;
+        }
+        NtlmPasswordAuthenticator authenticator =
+                new NtlmPasswordAuthenticator(null, username, Settings.getSmbPassword());
+        return base.withCredentials(authenticator);
+    }
+
+    // Cached base CIFS context. The default ("auto") path reuses jcifs' SingletonContext so its
+    // connection pool stays shared; the "signing disabled" path needs custom config, so it gets its
+    // own pooled BaseContext built from a PropertyConfiguration. Rebuilt only when the setting flips.
+    private static volatile CIFSContext sBaseContext;
+    private static volatile boolean sBaseSigningDisabled;
+
+    @NonNull
+    private static CIFSContext baseContext() {
+        boolean signingDisabled = Settings.getSmbSigningDisabled();
+        CIFSContext base = sBaseContext;
+        if (base != null && sBaseSigningDisabled == signingDisabled) {
+            return base;
+        }
+        synchronized (SmbStorage.class) {
+            if (sBaseContext == null || sBaseSigningDisabled != signingDisabled) {
+                sBaseContext = signingDisabled ? buildNoSigningContext() : SingletonContext.getInstance();
+                sBaseSigningDisabled = signingDisabled;
+            }
+            return sBaseContext;
+        }
+    }
+
+    @NonNull
+    private static CIFSContext buildNoSigningContext() {
+        try {
+            Properties props = new Properties();
+            // jcifs already defaults signingPreferred/signingEnforced to false; setting them keeps
+            // that explicit. ipcSigningEnforced defaults to TRUE, so turning it off is the real change
+            // — it drops the per-packet HMAC on the control/IPC traffic that signing would otherwise
+            // add. Data-share signing beyond this is governed by what the server requires.
+            props.setProperty("jcifs.smb.client.signingPreferred", "false");
+            props.setProperty("jcifs.smb.client.signingEnforced", "false");
+            props.setProperty("jcifs.smb.client.ipcSigningEnforced", "false");
+            return new BaseContext(new PropertyConfiguration(props));
+        } catch (Throwable e) {
+            // CIFSException (or anything) building the custom config: fall back to the default context
+            // rather than break SMB entirely.
+            Log.e(TAG, "Failed to build no-signing CIFS context; using default", e);
             return SingletonContext.getInstance();
         }
-        NtlmPasswordAuthenticator authenticator = new NtlmPasswordAuthenticator(null, username, password);
-        return SingletonContext.getInstance().withCredentials(authenticator);
     }
 
     @NonNull
